@@ -342,7 +342,7 @@ const SOC_COLOR={danny:'var(--danny)',greis:'var(--greis)',gihans:'var(--gihans)
 const DEFAULT={
   productos:[], ventas:[], compras:[], egresos:[], pagos:[],
   socios:{danny:30,greis:25,gihans:35,empresa:10},
-  tasaRef:0, saldoInicial:0
+  tasaRef:0, saldoInicial:0, tasaRefAuto:true
 };
 let db=load();
 
@@ -719,7 +719,7 @@ async function fetchBCV(manual){
         bcvRate=rate;
         el.innerHTML='<span style="color:var(--green)">'+fNum(rate)+' Bs/$</span>';
         de.textContent=date?('actualizado '+new Date(date).toLocaleDateString('es-VE',{day:'2-digit',month:'short',year:'numeric'})):'';
-        if(!n(db.tasaRef)){db.tasaRef=rate;save();render();}
+        if(db.tasaRefAuto!==false){db.tasaRef=rate;save();render();}
         if(manual)toast('Tasa BCV actualizada');
         return;
       }
@@ -728,9 +728,11 @@ async function fetchBCV(manual){
   el.innerHTML='<span class="muted">No se pudo obtener la tasa (la app sigue funcionando)</span>';
 }
 function useBcv(id){if(!bcvRate)return toast('Tasa BCV no disponible',true);$(id).value=bcvRate.toFixed(2);if(id==='vTasa')calcVenta();if(id==='cTasa')updateCompraCalc();}
-function useBcvRef(){if(!bcvRate)return toast('Tasa BCV no disponible',true);db.tasaRef=bcvRate;save();render();toast('Tasa ref. = BCV ('+fNum(bcvRate)+')');}
+function useBcvRef(){if(!bcvRate)return toast('Tasa BCV no disponible',true);db.tasaRef=bcvRate;db.tasaRefAuto=true;save();render();toast('Tasa ref. = BCV ('+fNum(bcvRate)+') · seguirá la del día');}
 window.addEventListener('online',()=>{fetchBCV();cloudPush();});
 window.addEventListener('offline',()=>{fetchBCV();setSync('off','Sin conexión (se guardó local)');});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&navigator.onLine)fetchBCV();});
+setInterval(()=>{if(navigator.onLine)fetchBCV();},30*60*1000);
 
 /* ================= LOGIN / SESIÓN ================= */
 async function doLogin(){
@@ -763,7 +765,7 @@ async function startApp(session){
 }
 
 /* ================= INIT ================= */
-$('tasaRef').addEventListener('input',e=>{db.tasaRef=n(e.target.value);save();render();});
+$('tasaRef').addEventListener('input',e=>{db.tasaRef=n(e.target.value);db.tasaRefAuto=false;save();render();});
 $('saldoIni').addEventListener('input',e=>{db.saldoInicial=n(e.target.value);save();render();});
 ['cCant','cTotal','cTasa'].forEach(i=>$(i).addEventListener('input',updateCompraCalc));
 $('logPass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
