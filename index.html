@@ -160,6 +160,15 @@
           <button class="btn sec sm" onclick="useBcvRef()">Usar como tasa ref.</button>
         </div>
       </div>
+      <div class="panel" id="calcPanel">
+        <h3>🧮 Calculadora de presupuestos</h3>
+        <div class="sub muted" style="margin-bottom:8px">Para cotizar a clientes: dólares × tasa = bolívares</div>
+        <div class="row">
+          <div><label>Tasa del día (Bs/$) <a href="#" onclick="useBcv('calcTasa');return false" style="color:var(--brand);text-decoration:none">⟳BCV</a></label><input type="number" step="0.01" id="calcTasa" placeholder="0.00" oninput="calcPresupuesto()"></div>
+          <div><label>Monto en dólares ($)</label><input type="number" step="0.01" id="calcUsd" placeholder="0.00" oninput="calcPresupuesto()"></div>
+        </div>
+        <div class="calcbox" id="calcOut"></div>
+      </div>
       <div class="cards" id="dashCards"></div>
       <div class="grid2">
         <div class="panel">
@@ -582,6 +591,8 @@ function render(){
   // DASHBOARD
   $('tasaRef').value=db.tasaRef||'';
   $('saldoIni').value=db.saldoInicial||'';
+  if(!$('calcTasa').value&&db.tasaRef)$('calcTasa').value=n(db.tasaRef).toFixed(2);
+  calcPresupuesto();
   $('dashCards').innerHTML=[
     [t.saldoUSD>=0?'green':'red','💵 Saldo en banco/caja',fUSD(t.saldoUSD),tasa?fBs(t.saldoUSD*tasa):'',true],
     ['blue','Ventas totales (entran)',fUSD(t.ventasUSD),tasa?fBs(t.ventasUSD*tasa):''],
@@ -728,7 +739,12 @@ async function fetchBCV(manual){
   }
   el.innerHTML='<span class="muted">No se pudo obtener la tasa (la app sigue funcionando)</span>';
 }
-function useBcv(id){if(!bcvRate)return toast('Tasa BCV no disponible',true);$(id).value=bcvRate.toFixed(2);if(id==='vTasa')calcVenta();if(id==='cTasa')updateCompraCalc();}
+function useBcv(id){if(!bcvRate)return toast('Tasa BCV no disponible',true);$(id).value=bcvRate.toFixed(2);if(id==='vTasa')calcVenta();if(id==='cTasa')updateCompraCalc();if(id==='calcTasa')calcPresupuesto();}
+function calcPresupuesto(){
+  const tasa=n($('calcTasa').value), usd=n($('calcUsd').value);
+  const bs=usd*tasa;
+  $('calcOut').innerHTML=`<div class="line"><span>$${fNum(usd)} × ${fNum(tasa)} Bs/$</span><b style="color:var(--green);font-size:18px">${fBs(bs)}</b></div>`;
+}
 function useBcvRef(){if(!bcvRate)return toast('Tasa BCV no disponible',true);db.tasaRef=bcvRate;db.tasaRefAuto=true;save();render();toast('Tasa ref. = BCV ('+fNum(bcvRate)+') · seguirá la del día');}
 window.addEventListener('online',()=>{fetchBCV();cloudPush();});
 window.addEventListener('offline',()=>{fetchBCV();setSync('off','Sin conexión (se guardó local)');});
