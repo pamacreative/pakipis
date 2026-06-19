@@ -16,6 +16,7 @@
     --danny:#5aa9ff; --greis:#c792ea; --gihans:#3ddc97; --empresa:#ffd166;
   }
   *{box-sizing:border-box}
+  html,body{max-width:100%;overflow-x:hidden;-webkit-text-size-adjust:100%}
   body{margin:0;font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--bg);color:var(--txt);font-size:14px}
   h1,h2,h3{margin:0 0 .4em}
   a{color:var(--brand)}
@@ -49,7 +50,19 @@
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:18px}
   .panel h3{display:flex;align-items:center;gap:8px}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
-  @media(max-width:900px){.grid2{grid-template-columns:1fr}.side{width:64px}.logo b,.logo small,.nav button span.t,.side .foot{display:none}.nav button{justify-content:center}}
+  @media(max-width:900px){.grid2{grid-template-columns:1fr}.side{width:64px}.logo b,.logo small,.nav button span.t{display:none}.nav button{justify-content:center}.side .foot .t,.side .foot #userEmail{display:none}.side .foot{align-items:center;text-align:center}}
+  @media(max-width:720px){
+    .main{padding:14px 12px}
+    .side{width:52px;padding:12px 5px}
+    .head{flex-direction:column;align-items:stretch;gap:8px}
+    .head h1{font-size:21px}
+    .panel{padding:14px;overflow-x:auto}
+    .cards{gap:10px}
+    .card .val{font-size:20px}
+    input,select,textarea{font-size:16px}
+    table{font-size:12px}
+    th,td{padding:8px 6px}
+  }
   /* Forms */
   label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px}
   input,select,textarea{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--txt);padding:9px 10px;border-radius:8px;font-size:14px;font-family:inherit}
@@ -138,7 +151,7 @@
     <div class="foot">
       <div class="sync" id="syncStatus"><span class="dotled"></span><span class="t" id="syncText">Conectando…</span></div>
       <div class="t" id="userEmail" style="margin:6px 0;word-break:break-all"></div>
-      <button class="btn sec sm t" style="width:100%" onclick="doLogout()">Cerrar sesión</button>
+      <button class="btn sec sm" style="width:100%" onclick="doLogout()" title="Cerrar sesión"><span class="ic">⎋</span><span class="t"> Cerrar sesión</span></button>
     </div>
   </aside>
 
@@ -792,8 +805,12 @@ render();
 supa.auth.getSession().then(({data})=>{if(data.session)startApp(data.session);});
 supa.auth.onAuthStateChange((_e,session)=>{if(session)startApp(session);});
 
-// Registrar la PWA (instalable en el celular)
-if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}
+// Registrar la PWA (instalable en el celular) + recargar solo cuando hay versión nueva
+if('serviceWorker' in navigator){
+  let refreshing=false;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{if(refreshing)return;refreshing=true;location.reload();});
+  window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+}
 </script>
 </body>
 </html>
