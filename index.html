@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Pakipis · Contabilidad</title>
+<meta name="theme-color" content="#ff7a59">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+  :root{
+    --bg:#0f1216; --panel:#171c23; --panel2:#1d242d; --line:#2a333d;
+    --txt:#e8edf2; --muted:#93a1b0; --brand:#ff7a59; --brand2:#ffb199;
+    --green:#3ddc97; --red:#ff6b6b; --blue:#5aa9ff; --yellow:#ffd166;
+    --danny:#5aa9ff; --greis:#c792ea; --gihans:#3ddc97; --empresa:#ffd166;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--bg);color:var(--txt);font-size:14px}
+  h1,h2,h3{margin:0 0 .4em}
+  a{color:var(--brand)}
+  .app{display:flex;min-height:100vh}
+  /* Sidebar */
+  .side{width:230px;background:var(--panel);border-right:1px solid var(--line);padding:18px 14px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:6px}
+  .logo{display:flex;align-items:center;gap:10px;margin-bottom:18px}
+  .logo .dot{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--brand),var(--brand2));display:flex;align-items:center;justify-content:center;font-weight:800;color:#1a1206}
+  .logo b{font-size:18px;letter-spacing:.3px}
+  .logo small{color:var(--muted);display:block;font-size:11px}
+  .nav{display:flex;flex-direction:column;gap:4px}
+  .nav button{display:flex;align-items:center;gap:10px;background:transparent;border:0;color:var(--muted);padding:10px 12px;border-radius:8px;cursor:pointer;text-align:left;font-size:14px}
+  .nav button:hover{background:var(--panel2);color:var(--txt)}
+  .nav button.active{background:linear-gradient(135deg,rgba(255,122,89,.18),rgba(255,122,89,.05));color:var(--txt);border:1px solid rgba(255,122,89,.35)}
+  .nav .ic{width:20px;text-align:center}
+  .side .foot{margin-top:auto;font-size:11px;color:var(--muted)}
+  /* Main */
+  .main{flex:1;padding:24px 28px;max-width:1200px}
+  .head{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px;flex-wrap:wrap;gap:10px}
+  .head .sub{color:var(--muted);font-size:13px}
+  /* Cards */
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:22px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+  .card .lbl{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+  .card .val{font-size:24px;font-weight:700;margin-top:6px}
+  .card .val.sm{font-size:18px}
+  .card .bs{color:var(--muted);font-size:12px;margin-top:2px}
+  .card.green .val{color:var(--green)} .card.red .val{color:var(--red)}
+  .card.blue .val{color:var(--blue)} .card.brand .val{color:var(--brand)}
+  /* Panels */
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:18px}
+  .panel h3{display:flex;align-items:center;gap:8px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:900px){.grid2{grid-template-columns:1fr}.side{width:64px}.logo b,.logo small,.nav button span.t,.side .foot{display:none}.nav button{justify-content:center}}
+  /* Forms */
+  label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px}
+  input,select,textarea{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--txt);padding:9px 10px;border-radius:8px;font-size:14px;font-family:inherit}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--brand)}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  .row>div{flex:1;min-width:120px}
+  .btn{background:linear-gradient(135deg,var(--brand),var(--brand2));color:#1a1206;border:0;padding:10px 16px;border-radius:8px;font-weight:700;cursor:pointer;font-size:14px}
+  .btn:hover{filter:brightness(1.08)}
+  .btn.sec{background:var(--panel2);color:var(--txt);border:1px solid var(--line);font-weight:600}
+  .btn.danger{background:transparent;border:1px solid var(--red);color:var(--red)}
+  .btn.sm{padding:6px 10px;font-size:12px}
+  /* Tables */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+  tr:hover td{background:rgba(255,255,255,.02)}
+  td.r,th.r{text-align:right}
+  .tag{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid var(--line)}
+  .tag.in{color:var(--green);border-color:rgba(61,220,151,.4);background:rgba(61,220,151,.08)}
+  .tag.out{color:var(--red);border-color:rgba(255,107,107,.4);background:rgba(255,107,107,.08)}
+  .tag.inv{color:var(--blue);border-color:rgba(90,169,255,.4);background:rgba(90,169,255,.08)}
+  .muted{color:var(--muted)}
+  .pos{color:var(--green)} .neg{color:var(--red)}
+  .empty{color:var(--muted);text-align:center;padding:26px;font-style:italic}
+  .pill{display:inline-flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--line);border-radius:20px;padding:4px 10px;font-size:12px}
+  .matrow{display:flex;gap:8px;align-items:flex-end;margin-bottom:8px}
+  .matrow>div{flex:1}
+  .matrow .x{flex:0 0 auto}
+  .calcbox{background:var(--panel2);border:1px dashed var(--line);border-radius:10px;padding:14px;margin-top:12px}
+  .calcbox .line{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line)}
+  .calcbox .line:last-child{border:0}
+  .calcbox .line b{font-size:15px}
+  .socio{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .socio:last-child{border:0}
+  .swatch{width:12px;height:12px;border-radius:3px}
+  .socio .nm{flex:1}
+  .socio .pc{color:var(--muted);width:46px}
+  .socio .am{font-weight:700;text-align:right;min-width:90px}
+  .toast{position:fixed;bottom:24px;right:24px;background:var(--green);color:#062018;padding:12px 18px;border-radius:10px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.4);opacity:0;transform:translateY(10px);transition:.25s;z-index:99}
+  .toast.show{opacity:1;transform:none}
+  .toast.err{background:var(--red);color:#2a0808}
+  .low{color:var(--yellow)}
+  .hidden{display:none}
+  /* Login + sync */
+  .login{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:200;padding:20px}
+  .login .box{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:28px;width:100%;max-width:360px}
+  .login .dot{width:54px;height:54px;border-radius:14px;background:linear-gradient(135deg,var(--brand),var(--brand2));display:flex;align-items:center;justify-content:center;font-weight:800;color:#1a1206;font-size:22px;margin:0 auto 14px}
+  .login h2{text-align:center;margin-bottom:4px}
+  .login p{text-align:center;color:var(--muted);font-size:13px;margin:0 0 16px}
+  .login .err{color:var(--red);font-size:13px;text-align:center;margin-top:10px;min-height:18px}
+  .sync{font-size:11px;display:flex;align-items:center;gap:6px}
+  .sync .dotled{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+  .sync.ok .dotled{background:var(--green)} .sync.off .dotled{background:var(--yellow)} .sync.saving .dotled{background:var(--blue)} .sync.err .dotled{background:var(--red)}
+  .barwrap{height:8px;background:var(--panel2);border-radius:6px;overflow:hidden;margin-top:6px}
+  .bar{height:100%;border-radius:6px}
+  small.hint{color:var(--muted);font-size:11px}
+</style>
+</head>
+<body>
+<div class="login" id="loginScreen">
+  <div class="box">
+    <div class="dot">Pk</div>
+    <h2>Pakipis</h2>
+    <p>Ingresá con tu usuario de socio</p>
+    <label>Correo</label><input type="email" id="logEmail" placeholder="tucorreo@ejemplo.com" autocomplete="username">
+    <label>Contraseña</label><input type="password" id="logPass" placeholder="••••••••" autocomplete="current-password">
+    <div style="margin-top:16px"><button class="btn" style="width:100%" id="logBtn" onclick="doLogin()">Entrar</button></div>
+    <div class="err" id="logErr"></div>
+  </div>
+</div>
+<div class="app" id="appWrap" style="display:none">
+  <aside class="side">
+    <div class="logo">
+      <div class="dot">Pk</div>
+      <div><b>Pakipis</b><small>Contabilidad</small></div>
+    </div>
+    <nav class="nav" id="nav">
+      <button data-v="dashboard" class="active"><span class="ic">📊</span><span class="t">Resumen</span></button>
+      <button data-v="ventas"><span class="ic">🛒</span><span class="t">Ventas</span></button>
+      <button data-v="inventario"><span class="ic">📦</span><span class="t">Inventario</span></button>
+      <button data-v="compras"><span class="ic">🧱</span><span class="t">Compras / Inversión</span></button>
+      <button data-v="egresos"><span class="ic">🧾</span><span class="t">Egresos</span></button>
+      <button data-v="socios"><span class="ic">👥</span><span class="t">Socios</span></button>
+      <button data-v="backup"><span class="ic">💾</span><span class="t">Respaldo</span></button>
+    </nav>
+    <div class="foot">
+      <div class="sync" id="syncStatus"><span class="dotled"></span><span class="t" id="syncText">Conectando…</span></div>
+      <div class="t" id="userEmail" style="margin:6px 0;word-break:break-all"></div>
+      <button class="btn sec sm t" style="width:100%" onclick="doLogout()">Cerrar sesión</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <!-- ================= DASHBOARD ================= -->
+    <section id="view-dashboard">
+      <div class="head"><div><h1>Resumen general</h1><div class="sub">Estado del negocio en dólares y bolívares</div></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <div class="pill">Tasa ref. Bs/$ <input id="tasaRef" type="number" step="0.01" style="width:80px;margin-left:6px" placeholder="0"></div>
+          <div class="pill" title="Dinero que ya había en la cuenta antes de empezar a registrar">Saldo inicial $ <input id="saldoIni" type="number" step="0.01" style="width:80px;margin-left:6px" placeholder="0"></div>
+        </div>
+      </div>
+      <div class="panel" id="bcvBanner" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:14px 18px">
+        <div style="font-size:22px">🏦</div>
+        <div><div style="font-size:12px" class="muted">TASA BCV OFICIAL DEL DÍA</div><div id="bcvValue" style="font-size:18px;font-weight:700">Cargando…</div></div>
+        <div id="bcvDate" class="muted" style="font-size:12px"></div>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <button class="btn sec sm" onclick="fetchBCV(true)">↻ Actualizar</button>
+          <button class="btn sec sm" onclick="useBcvRef()">Usar como tasa ref.</button>
+        </div>
+      </div>
+      <div class="cards" id="dashCards"></div>
+      <div class="grid2">
+        <div class="panel">
+          <h3>👥 Reparto acumulado por socio</h3>
+          <div class="sub muted" style="margin-bottom:8px">Sobre la ganancia neta (venta − material)</div>
+          <div id="dashSocios"></div>
+        </div>
+        <div class="panel">
+          <h3>📦 Valor e inventario</h3>
+          <div id="dashInv"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>🕘 Últimos movimientos</h3>
+        <table><thead><tr><th>Fecha</th><th>Tipo</th><th>Detalle</th><th class="r">USD</th><th class="r">Bs</th></tr></thead>
+        <tbody id="dashMov"></tbody></table>
+      </div>
+    </section>
+
+    <!-- ================= VENTAS ================= -->
+    <section id="view-ventas" class="hidden">
+      <div class="head"><div><h1>Ventas</h1><div class="sub">Registrá la venta, elegí el material gastado y se reparte la ganancia</div></div></div>
+      <div class="grid2">
+        <div class="panel">
+          <h3>➕ Nueva venta</h3>
+          <label>Descripción del trabajo</label><input id="vDesc" placeholder="Ej: Etiquetas para torta, Sr. Pérez">
+          <small class="hint">🕒 Se registra automáticamente con la fecha y hora de esta PC.</small>
+          <div class="row">
+            <div><label>Total de venta (USD)</label><input type="number" step="0.01" id="vTotal" placeholder="0.00"></div>
+            <div><label>Tasa del dólar (Bs/$) <a href="#" onclick="useBcv('vTasa');return false" style="color:var(--brand);text-decoration:none">⟳BCV</a></label><input type="number" step="0.01" id="vTasa" placeholder="0.00" oninput="calcVenta()"></div>
+          </div>
+          <label>Materiales gastados en este trabajo</label>
+          <div id="vMats"></div>
+          <button class="btn sec sm" onclick="addMatRow()">+ Agregar material</button>
+          <div class="calcbox" id="vCalc"></div>
+          <div style="margin-top:14px"><button class="btn" onclick="saveVenta()">💾 Guardar venta</button></div>
+        </div>
+        <div class="panel">
+          <h3>📜 Historial de ventas</h3>
+          <table><thead><tr><th>Fecha</th><th>Detalle</th><th class="r">Venta $</th><th class="r">Material $</th><th class="r">Ganancia $</th><th></th></tr></thead>
+          <tbody id="ventasTbl"></tbody></table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= INVENTARIO ================= -->
+    <section id="view-inventario" class="hidden">
+      <div class="head"><div><h1>Inventario</h1><div class="sub">Productos, stock disponible y costo por hoja</div></div></div>
+      <div class="grid2">
+        <div class="panel">
+          <h3>➕ Nuevo producto</h3>
+          <label>Nombre</label><input id="pNombre" placeholder="Ej: Cartulina opalina blanca">
+          <div class="row">
+            <div><label>Categoría</label>
+              <select id="pCat">
+                <option>Etiquetas</option><option>Toppers</option>
+                <option>Cartulina</option><option>Tinta</option><option>Otro</option>
+              </select></div>
+            <div><label>Unidad</label><input id="pUnidad" value="hoja"></div>
+          </div>
+          <div class="row">
+            <div><label>Stock inicial</label><input type="number" step="1" id="pStock" placeholder="0"></div>
+            <div><label>Costo por unidad (USD)</label><input type="number" step="0.0001" id="pCosto" placeholder="0.00"></div>
+            <div><label>Alerta stock bajo</label><input type="number" step="1" id="pMin" placeholder="5"></div>
+          </div>
+          <small class="hint">Tip: para sumar stock comprado usá la sección <b>Compras / Inversión</b> (recalcula el costo automáticamente).</small>
+          <div style="margin-top:12px"><button class="btn" onclick="saveProducto()">💾 Guardar producto</button></div>
+        </div>
+        <div class="panel">
+          <h3>📦 Productos</h3>
+          <table><thead><tr><th>Producto</th><th>Cat.</th><th class="r">Stock</th><th class="r">Costo/u $</th><th class="r">Valor $</th><th></th></tr></thead>
+          <tbody id="invTbl"></tbody></table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= COMPRAS / INVERSION ================= -->
+    <section id="view-compras" class="hidden">
+      <div class="head"><div><h1>Compras / Inversión</h1><div class="sub">Comprá hojas/material: suma stock y recalcula el costo por hoja</div></div></div>
+      <div class="grid2">
+        <div class="panel">
+          <h3>➕ Registrar compra</h3>
+          <label>Tipo</label><select id="cTipo"><option value="inversion">Inversión (capital)</option><option value="recompra">Recompra</option></select>
+          <small class="hint">🕒 Se registra automáticamente con la fecha y hora de esta PC.</small>
+          <label>Producto</label><select id="cProd"></select>
+          <div class="row">
+            <div><label>Cantidad (hojas/unid.)</label><input type="number" step="1" id="cCant" placeholder="0"></div>
+            <div><label>Costo total (USD)</label><input type="number" step="0.01" id="cTotal" placeholder="0.00"></div>
+            <div><label>Tasa Bs/$ <a href="#" onclick="useBcv('cTasa');return false" style="color:var(--brand);text-decoration:none">⟳BCV</a></label><input type="number" step="0.01" id="cTasa" placeholder="0.00"></div>
+          </div>
+          <div class="calcbox" id="cCalc"></div>
+          <div style="margin-top:12px"><button class="btn" onclick="saveCompra()">💾 Guardar compra</button></div>
+        </div>
+        <div class="panel">
+          <h3>📜 Historial de compras</h3>
+          <table><thead><tr><th>Fecha</th><th>Producto</th><th>Tipo</th><th class="r">Cant.</th><th class="r">Total $</th><th></th></tr></thead>
+          <tbody id="comprasTbl"></tbody></table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= EGRESOS ================= -->
+    <section id="view-egresos" class="hidden">
+      <div class="head"><div><h1>Egresos</h1><div class="sub">Gastos generales: tinta, servicios, mantenimiento, etc.</div></div></div>
+      <div class="grid2">
+        <div class="panel">
+          <h3>➕ Nuevo egreso</h3>
+          <label>Categoría</label><select id="eCat"><option>Tinta</option><option>Servicios</option><option>Mantenimiento</option><option>Transporte</option><option>Otro</option></select>
+          <small class="hint">🕒 Se registra automáticamente con la fecha y hora de esta PC.</small>
+          <label>Concepto</label><input id="eConcepto" placeholder="Ej: Llenado de tinta negra">
+          <div class="row">
+            <div><label>Monto (USD)</label><input type="number" step="0.01" id="eMonto" placeholder="0.00"></div>
+            <div><label>Tasa Bs/$ <a href="#" onclick="useBcv('eTasa');return false" style="color:var(--brand);text-decoration:none">⟳BCV</a></label><input type="number" step="0.01" id="eTasa" placeholder="0.00"></div>
+          </div>
+          <div style="margin-top:12px"><button class="btn" onclick="saveEgreso()">💾 Guardar egreso</button></div>
+        </div>
+        <div class="panel">
+          <h3>📜 Historial de egresos</h3>
+          <table><thead><tr><th>Fecha</th><th>Concepto</th><th>Cat.</th><th class="r">USD</th><th class="r">Bs</th><th></th></tr></thead>
+          <tbody id="egresosTbl"></tbody></table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= SOCIOS ================= -->
+    <section id="view-socios" class="hidden">
+      <div class="head"><div><h1>Socios</h1><div class="sub">Porcentajes de reparto y ganancias acumuladas</div></div></div>
+      <div class="grid2">
+        <div class="panel">
+          <h3>⚙️ Porcentajes de reparto</h3>
+          <div class="sub muted" style="margin-bottom:8px">Deben sumar 100%.</div>
+          <div class="row"><div><label>Danny %</label><input type="number" step="0.1" id="sDanny"></div>
+            <div><label>Greis %</label><input type="number" step="0.1" id="sGreis"></div></div>
+          <div class="row"><div><label>Gihans %</label><input type="number" step="0.1" id="sGihans"></div>
+            <div><label>Empresa %</label><input type="number" step="0.1" id="sEmpresa"></div></div>
+          <div id="sumPct" class="sub" style="margin-top:8px"></div>
+          <div style="margin-top:12px"><button class="btn" onclick="saveSocios()">💾 Guardar porcentajes</button></div>
+        </div>
+        <div class="panel">
+          <h3>💵 Ganancia acumulada por socio</h3>
+          <div id="sociosFull"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= BACKUP ================= -->
+    <section id="view-backup" class="hidden">
+      <div class="head"><div><h1>Respaldo de datos</h1><div class="sub">Tus datos viven en esta PC. Hacé respaldo seguido y guardá el archivo.</div></div></div>
+      <div class="panel">
+        <h3>💾 Exportar / Importar</h3>
+        <p class="muted">El respaldo es un archivo <b>.json</b> con todo (productos, ventas, compras, egresos, socios). Podés llevarlo a otra PC e importarlo.</p>
+        <div class="row" style="margin-top:6px">
+          <button class="btn" onclick="exportJSON()">⬇️ Descargar respaldo (.json)</button>
+          <button class="btn sec" onclick="document.getElementById('importFile').click()">⬆️ Importar respaldo</button>
+          <input type="file" id="importFile" accept=".json" class="hidden" onchange="importJSON(event)">
+          <button class="btn sec" onclick="exportCSV()">📄 Exportar ventas a CSV (Excel)</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>⚠️ Zona de peligro</h3>
+        <p class="muted">Borra TODOS los datos de esta PC. No se puede deshacer (hacé respaldo antes).</p>
+        <button class="btn danger" onclick="wipeAll()">🗑️ Borrar todos los datos</button>
+      </div>
+    </section>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ================= CONEXIÓN SUPABASE ================= */
+const SUPA_URL='https://eemmxzjmyuhazrulpbyj.supabase.co';
+const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVlbW14empteXVoYXpydWxwYnlqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MTgwNTksImV4cCI6MjA5NzM5NDA1OX0.5Xh8oCbSegtxMadI4sCj6Aek4ZYrhs3sixpqC0qDWqw';
+const supa=window.supabase.createClient(SUPA_URL,SUPA_KEY);
+
+/* ================= ESTADO ================= */
+const KEY='pakipis_data_v1';
+const SOCIOS=['danny','greis','gihans','empresa'];
+const SOC_LABEL={danny:'Danny',greis:'Greis',gihans:'Gihans',empresa:'Empresa'};
+const SOC_COLOR={danny:'var(--danny)',greis:'var(--greis)',gihans:'var(--gihans)',empresa:'var(--empresa)'};
+const DEFAULT={
+  productos:[], ventas:[], compras:[], egresos:[], pagos:[],
+  socios:{danny:30,greis:25,gihans:35,empresa:10},
+  tasaRef:0, saldoInicial:0
+};
+let db=load();
+
+function load(){
+  try{const d=JSON.parse(localStorage.getItem(KEY));return d?{...DEFAULT,...d}:structuredClone(DEFAULT);}
+  catch(e){return structuredClone(DEFAULT);}
+}
+// save() guarda local al instante y empuja a la nube (con pequeño retardo para agrupar cambios)
+let pushTimer=null, lastPushAt=0;
+function save(){
+  localStorage.setItem(KEY,JSON.stringify(db));
+  if(pushTimer)clearTimeout(pushTimer);
+  setSync('saving','Guardando…');
+  pushTimer=setTimeout(cloudPush,500);
+}
+async function cloudPush(){
+  if(!navigator.onLine){setSync('off','Sin conexión (se guardó local)');return;}
+  try{
+    lastPushAt=Date.now();
+    const {error}=await supa.from('config').update({estado:db}).eq('id','main');
+    if(error)throw error;
+    setSync('ok','Guardado en la nube');
+  }catch(e){setSync('err','Error al guardar nube');console.warn('push',e);}
+}
+async function cloudPull(){
+  try{
+    const {data,error}=await supa.from('config').select('estado').eq('id','main').single();
+    if(error)throw error;
+    if(data&&data.estado){db={...DEFAULT,...data.estado};localStorage.setItem(KEY,JSON.stringify(db));}
+    setSync('ok','Sincronizado');render();
+    return true;
+  }catch(e){setSync('err','No se pudo leer la nube');console.warn('pull',e);return false;}
+}
+function setSync(cls,txt){const s=$('syncStatus');if(!s)return;s.className='sync '+cls;$('syncText').textContent=txt;}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
+// Fecha/hora automáticas tomadas de la PC (hora local, sin escribir a mano)
+function localDate(d){d=d||new Date();const off=d.getTimezoneOffset()*60000;return new Date(d-off).toISOString().slice(0,10);}
+function today(){return localDate();}
+function nowTs(){return Date.now();}
+function fmtFecha(ts,fecha){const d=ts?new Date(ts):(fecha?new Date(fecha+'T00:00:00'):new Date());return d.toLocaleDateString('es-VE',{day:'2-digit',month:'2-digit',year:'numeric'});}
+function fmtFechaHora(ts,fecha){if(!ts)return fmtFecha(ts,fecha);const d=new Date(ts);return d.toLocaleDateString('es-VE',{day:'2-digit',month:'2-digit',year:'numeric'})+' '+d.toLocaleTimeString('es-VE',{hour:'2-digit',minute:'2-digit'});}
+
+/* ================= UTILES ================= */
+const $=id=>document.getElementById(id);
+function n(v){v=parseFloat(v);return isNaN(v)?0:v;}
+function fUSD(v){return '$'+n(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function fBs(v){return n(v).toLocaleString('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2})+' Bs';}
+function fNum(v){return n(v).toLocaleString('en-US',{maximumFractionDigits:2});}
+function toast(msg,err){const t=$('toast');t.textContent=msg;t.className='toast show'+(err?' err':'');setTimeout(()=>t.className='toast',2200);}
+function prodById(id){return db.productos.find(p=>p.id===id);}
+
+/* ================= NAVEGACION ================= */
+$('nav').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  document.querySelectorAll('main section').forEach(s=>s.classList.add('hidden'));
+  $('view-'+b.dataset.v).classList.remove('hidden');
+  render();
+});
+
+/* ================= PRODUCTOS / INVENTARIO ================= */
+function saveProducto(){
+  const nombre=$('pNombre').value.trim();
+  if(!nombre)return toast('Poné un nombre al producto',true);
+  db.productos.push({
+    id:uid(),nombre,cat:$('pCat').value,unidad:$('pUnidad').value||'hoja',
+    stock:n($('pStock').value),costo:n($('pCosto').value),min:n($('pMin').value)||5
+  });
+  save();
+  ['pNombre','pStock','pCosto','pMin'].forEach(i=>$(i).value='');
+  toast('Producto guardado');render();
+}
+function delProducto(id){
+  if(!confirm('¿Borrar este producto?'))return;
+  db.productos=db.productos.filter(p=>p.id!==id);save();toast('Producto borrado');render();
+}
+function editStock(id){
+  const p=prodById(id);
+  const v=prompt('Ajustar stock de "'+p.nombre+'" (unidades actuales):',p.stock);
+  if(v===null)return;p.stock=n(v);save();render();
+}
+
+/* ================= COMPRAS ================= */
+function saveCompra(){
+  const prodId=$('cProd').value;
+  const p=prodById(prodId);
+  if(!p)return toast('Creá primero un producto en Inventario',true);
+  const cant=n($('cCant').value), total=n($('cTotal').value), tasa=n($('cTasa').value);
+  if(cant<=0||total<=0)return toast('Cantidad y costo total deben ser mayores a 0',true);
+  // costo promedio ponderado
+  const stockPrev=n(p.stock), costoPrev=n(p.costo);
+  const nuevoStock=stockPrev+cant;
+  const nuevoCosto=(stockPrev*costoPrev + total)/nuevoStock;
+  p.stock=nuevoStock; p.costo=nuevoCosto;
+  db.compras.push({
+    id:uid(),ts:nowTs(),fecha:today(),prodId,prodNombre:p.nombre,
+    tipo:$('cTipo').value,cant,total,tasa,totalBs:total*tasa,costoUnit:total/cant
+  });
+  save();
+  ['cCant','cTotal'].forEach(i=>$(i).value='');
+  toast('Compra registrada · stock y costo actualizados');render();
+}
+function delCompra(id){
+  if(!confirm('¿Borrar esta compra? (no revierte el stock automáticamente)'))return;
+  db.compras=db.compras.filter(c=>c.id!==id);save();render();
+}
+
+/* ================= VENTAS ================= */
+function matRowHTML(){
+  const opts=db.productos.map(p=>`<option value="${p.id}">${p.nombre} (stock ${fNum(p.stock)})</option>`).join('');
+  return `<div class="matrow">
+    <div><select class="vMatProd" onchange="calcVenta()">${opts||'<option value="">— sin productos —</option>'}</select></div>
+    <div style="flex:0 0 100px"><input type="number" step="1" class="vMatCant" placeholder="cant." oninput="calcVenta()"></div>
+    <div class="x"><button class="btn sec sm" onclick="this.closest('.matrow').remove();calcVenta()">✕</button></div>
+  </div>`;
+}
+function addMatRow(){
+  if(!db.productos.length)return toast('Primero creá productos en Inventario',true);
+  $('vMats').insertAdjacentHTML('beforeend',matRowHTML());calcVenta();
+}
+function readMats(){
+  const out=[];
+  document.querySelectorAll('#vMats .matrow').forEach(r=>{
+    const id=r.querySelector('.vMatProd').value;
+    const cant=n(r.querySelector('.vMatCant').value);
+    const p=prodById(id);
+    if(p&&cant>0)out.push({prodId:id,nombre:p.nombre,cant,costoUnit:p.costo,subtotal:p.costo*cant});
+  });
+  return out;
+}
+function calcVenta(){
+  const total=n($('vTotal').value), tasa=n($('vTasa').value);
+  const mats=readMats();
+  const costoMat=mats.reduce((s,m)=>s+m.subtotal,0);
+  const ganancia=total-costoMat;
+  const rep=reparto(ganancia);
+  $('vCalc').innerHTML=`
+    <div class="line"><span>Total venta</span><b>${fUSD(total)}</b></div>
+    <div class="line"><span>− Costo material (${mats.length})</span><span class="neg">${fUSD(costoMat)}</span></div>
+    <div class="line"><span>Ganancia neta</span><b class="${ganancia>=0?'pos':'neg'}">${fUSD(ganancia)}</b></div>
+    <div class="line muted"><span>En bolívares (tasa ${tasa||0})</span><span>${fBs(total*tasa)} venta · ${fBs(ganancia*tasa)} ganancia</span></div>
+    <div style="margin-top:8px">
+      ${SOCIOS.map(s=>`<div class="socio"><span class="swatch" style="background:${SOC_COLOR[s]}"></span><span class="nm">${SOC_LABEL[s]}</span><span class="pc">${db.socios[s]}%</span><span class="am">${fUSD(rep[s])}</span></div>`).join('')}
+    </div>`;
+}
+function reparto(g){
+  const r={};SOCIOS.forEach(s=>r[s]=g*(n(db.socios[s])/100));return r;
+}
+function saveVenta(){
+  const total=n($('vTotal').value), tasa=n($('vTasa').value);
+  if(total<=0)return toast('Poné el total de venta',true);
+  const mats=readMats();
+  // verificar stock
+  for(const m of mats){const p=prodById(m.prodId);if(m.cant>p.stock){if(!confirm(`Stock insuficiente de "${p.nombre}" (hay ${fNum(p.stock)}, usás ${fNum(m.cant)}). ¿Guardar igual?`))return;}}
+  const costoMat=mats.reduce((s,m)=>s+m.subtotal,0);
+  const ganancia=total-costoMat;
+  // descontar stock
+  mats.forEach(m=>{const p=prodById(m.prodId);if(p)p.stock=Math.max(0,p.stock-m.cant);});
+  db.ventas.push({
+    id:uid(),ts:nowTs(),fecha:today(),desc:$('vDesc').value.trim()||'Venta',
+    total,tasa,totalBs:total*tasa,mats,costoMat,ganancia,gananciaBs:ganancia*tasa,reparto:reparto(ganancia)
+  });
+  save();
+  $('vTotal').value='';$('vDesc').value='';$('vMats').innerHTML='';
+  calcVenta();
+  toast('Venta guardada · stock descontado');render();
+}
+function delVenta(id){
+  if(!confirm('¿Borrar esta venta? (no repone el stock automáticamente)'))return;
+  db.ventas=db.ventas.filter(v=>v.id!==id);save();render();
+}
+
+/* ================= EGRESOS ================= */
+function saveEgreso(){
+  const concepto=$('eConcepto').value.trim();
+  const monto=n($('eMonto').value), tasa=n($('eTasa').value);
+  if(!concepto)return toast('Poné un concepto',true);
+  if(monto<=0)return toast('Monto debe ser mayor a 0',true);
+  db.egresos.push({id:uid(),ts:nowTs(),fecha:today(),concepto,cat:$('eCat').value,monto,tasa,montoBs:monto*tasa});
+  save();$('eConcepto').value='';$('eMonto').value='';toast('Egreso guardado');render();
+}
+function delEgreso(id){if(!confirm('¿Borrar egreso?'))return;db.egresos=db.egresos.filter(e=>e.id!==id);save();render();}
+
+/* ================= SOCIOS ================= */
+function saveSocios(){
+  const v={danny:n($('sDanny').value),greis:n($('sGreis').value),gihans:n($('sGihans').value),empresa:n($('sEmpresa').value)};
+  const sum=v.danny+v.greis+v.gihans+v.empresa;
+  if(Math.abs(sum-100)>0.01){if(!confirm('Los porcentajes suman '+sum+'%, no 100%. ¿Guardar igual?'))return;}
+  db.socios=v;save();toast('Porcentajes guardados');render();
+}
+
+/* ================= PAGOS A SOCIOS ================= */
+function pagarSocio(s){
+  const pend=totales().pendiente[s];
+  if(pend<=0.005)return toast('No hay monto pendiente para '+SOC_LABEL[s],true);
+  if(!confirm('¿Registrar el pago de '+fUSD(pend)+' a '+SOC_LABEL[s]+'?\nSu pendiente queda en $0 y se descuenta del saldo del banco.'))return;
+  db.pagos.push({id:uid(),ts:nowTs(),fecha:today(),socio:s,monto:pend});
+  save();toast('Pagado a '+SOC_LABEL[s]+' · pendiente en $0');render();
+}
+function pagarTodos(){
+  const t=totales();
+  const total=SOCIOS.reduce((a,s)=>a+Math.max(0,t.pendiente[s]),0);
+  if(total<=0.005)return toast('No hay montos pendientes',true);
+  if(!confirm('¿Registrar el pago de TODO lo pendiente ('+fUSD(total)+') a los socios y la empresa?\nTodos quedan en $0 y se descuenta del saldo.'))return;
+  SOCIOS.forEach(s=>{const p=t.pendiente[s];if(p>0.005)db.pagos.push({id:uid(),ts:nowTs(),fecha:today(),socio:s,monto:p});});
+  save();toast('Pagos registrados · todos en $0');render();
+}
+function delPago(id){
+  if(!confirm('¿Anular este pago? El monto vuelve a quedar pendiente y al saldo.'))return;
+  db.pagos=db.pagos.filter(p=>p.id!==id);save();render();
+}
+
+/* ================= RENDER ================= */
+function totales(){
+  const ventasUSD=db.ventas.reduce((s,v)=>s+v.total,0);
+  const materialUSD=db.ventas.reduce((s,v)=>s+v.costoMat,0);
+  const gananciaUSD=db.ventas.reduce((s,v)=>s+v.ganancia,0);
+  const inversionUSD=db.compras.reduce((s,c)=>s+c.total,0);
+  const egresosUSD=db.egresos.reduce((s,e)=>s+e.monto,0);
+  const stockVal=db.productos.reduce((s,p)=>s+p.stock*p.costo,0);
+  const netoUSD=gananciaUSD-egresosUSD; // ganancia real del negocio
+  // Reparto histórico total, pagado y pendiente por socio
+  const repAcum={},pagado={},pendiente={};
+  SOCIOS.forEach(s=>{
+    repAcum[s]=db.ventas.reduce((a,v)=>a+(v.reparto?.[s]||0),0);
+    pagado[s]=db.pagos.filter(p=>p.socio===s).reduce((a,p)=>a+p.monto,0);
+    pendiente[s]=repAcum[s]-pagado[s];
+  });
+  const totalPagos=db.pagos.reduce((a,p)=>a+p.monto,0);
+  // Saldo que debe coincidir con el banco: entra ventas, salen egresos, compras y pagos a socios
+  const saldoUSD=n(db.saldoInicial)+ventasUSD-egresosUSD-inversionUSD-totalPagos;
+  return {ventasUSD,materialUSD,gananciaUSD,inversionUSD,egresosUSD,stockVal,netoUSD,saldoUSD,repAcum,pagado,pendiente,totalPagos};
+}
+function render(){
+  const t=totales(), tasa=n(db.tasaRef);
+  // DASHBOARD
+  $('tasaRef').value=db.tasaRef||'';
+  $('saldoIni').value=db.saldoInicial||'';
+  $('dashCards').innerHTML=[
+    [t.saldoUSD>=0?'green':'red','💵 Saldo en banco/caja',fUSD(t.saldoUSD),tasa?fBs(t.saldoUSD*tasa):'',true],
+    ['blue','Ventas totales (entran)',fUSD(t.ventasUSD),tasa?fBs(t.ventasUSD*tasa):''],
+    ['red','Egresos / gastos (salen)',fUSD(t.egresosUSD),tasa?fBs(t.egresosUSD*tasa):''],
+    ['red','Compras / inversión (salen)',fUSD(t.inversionUSD),tasa?fBs(t.inversionUSD*tasa):''],
+    ['red','Pagado a socios (salen)',fUSD(t.totalPagos),tasa?fBs(t.totalPagos*tasa):''],
+    ['green','Ganancia del trabajo (vtas−mat.)',fUSD(t.gananciaUSD),tasa?fBs(t.gananciaUSD*tasa):''],
+    ['blue','Valor de inventario',fUSD(t.stockVal),tasa?fBs(t.stockVal*tasa):''],
+  ].map(c=>`<div class="card ${c[0]}">${c[4]?'<div class="lbl" style="color:var(--brand2)">DEBE COINCIDIR CON TU BANCO</div>':''}<div class="lbl">${c[1]}</div><div class="val${c[4]?'':' sm'}">${c[2]}</div><div class="bs">${c[3]||''}</div></div>`).join('');
+  $('dashSocios').innerHTML='<div class="sub muted" style="margin-bottom:6px">Pendiente por pagar (se reinicia al pagar)</div>'+SOCIOS.map(s=>`<div class="socio"><span class="swatch" style="background:${SOC_COLOR[s]}"></span><span class="nm">${SOC_LABEL[s]}</span><span class="pc">${db.socios[s]}%</span><span class="am ${t.pendiente[s]>0.005?'pos':'muted'}">${fUSD(t.pendiente[s])}</span></div>`).join('');
+  // dash inventario
+  if(!db.productos.length){$('dashInv').innerHTML='<div class="empty">Sin productos cargados</div>';}
+  else{
+    $('dashInv').innerHTML=db.productos.map(p=>{
+      const low=p.stock<=p.min;
+      return `<div class="socio"><span class="nm">${p.nombre} <span class="muted">· ${p.cat}</span></span><span class="am ${low?'low':''}">${fNum(p.stock)} ${p.unidad}${low?' ⚠️':''}</span></div>`;
+    }).join('');
+  }
+  // dash movimientos
+  const movs=[
+    ...db.ventas.map(v=>({ts:v.ts,fecha:v.fecha,tipo:'in',det:v.desc,usd:v.total,bs:v.totalBs})),
+    ...db.egresos.map(e=>({ts:e.ts,fecha:e.fecha,tipo:'out',det:e.concepto,usd:-e.monto,bs:-e.montoBs})),
+    ...db.compras.map(c=>({ts:c.ts,fecha:c.fecha,tipo:'inv',det:'Compra '+c.prodNombre,usd:-c.total,bs:-c.totalBs})),
+    ...db.pagos.map(p=>({ts:p.ts,fecha:p.fecha,tipo:'pay',det:'Pago a '+SOC_LABEL[p.socio],usd:-p.monto,bs:-p.monto*n(db.tasaRef)})),
+  ].sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,12);
+  $('dashMov').innerHTML=movs.length?movs.map(m=>{
+    const tg=m.tipo==='in'?'<span class="tag in">Venta</span>':m.tipo==='out'?'<span class="tag out">Egreso</span>':m.tipo==='pay'?'<span class="tag out">Pago socio</span>':'<span class="tag inv">Compra</span>';
+    return `<tr><td>${fmtFechaHora(m.ts,m.fecha)}</td><td>${tg}</td><td>${m.det}</td><td class="r ${m.usd>=0?'pos':'neg'}">${fUSD(m.usd)}</td><td class="r muted">${fBs(m.bs)}</td></tr>`;
+  }).join(''):'<tr><td colspan="5" class="empty">Sin movimientos todavía</td></tr>';
+
+  // INVENTARIO
+  $('invTbl').innerHTML=db.productos.length?db.productos.map(p=>{
+    const low=p.stock<=p.min;
+    return `<tr><td><b>${p.nombre}</b></td><td><span class="muted">${p.cat}</span></td>
+      <td class="r ${low?'low':''}">${fNum(p.stock)}${low?' ⚠️':''}</td>
+      <td class="r">${fUSD(p.costo)}</td><td class="r">${fUSD(p.stock*p.costo)}</td>
+      <td class="r"><button class="btn sec sm" onclick="editStock('${p.id}')">stock</button> <button class="btn sec sm" onclick="delProducto('${p.id}')">✕</button></td></tr>`;
+  }).join(''):'<tr><td colspan="6" class="empty">Agregá tu primer producto</td></tr>';
+
+  // COMPRAS dropdown + calc
+  $('cProd').innerHTML=db.productos.map(p=>`<option value="${p.id}">${p.nombre}</option>`).join('')||'<option value="">— creá un producto —</option>';
+  updateCompraCalc();
+  $('comprasTbl').innerHTML=db.compras.length?[...db.compras].reverse().map(c=>
+    `<tr><td>${fmtFechaHora(c.ts,c.fecha)}</td><td>${c.prodNombre}</td><td><span class="tag ${c.tipo==='inversion'?'inv':'out'}">${c.tipo}</span></td><td class="r">${fNum(c.cant)}</td><td class="r">${fUSD(c.total)}<div class="muted" style="font-size:11px">${fBs(c.totalBs)}</div></td><td class="r"><button class="btn sec sm" onclick="delCompra('${c.id}')">✕</button></td></tr>`
+  ).join(''):'<tr><td colspan="6" class="empty">Sin compras registradas</td></tr>';
+
+  // VENTAS
+  $('ventasTbl').innerHTML=db.ventas.length?[...db.ventas].reverse().map(v=>
+    `<tr><td>${fmtFechaHora(v.ts,v.fecha)}</td><td>${v.desc}<div class="muted" style="font-size:11px">${v.mats.map(m=>m.nombre+'×'+fNum(m.cant)).join(', ')||'sin material'}</div></td>
+      <td class="r">${fUSD(v.total)}</td><td class="r neg">${fUSD(v.costoMat)}</td>
+      <td class="r ${v.ganancia>=0?'pos':'neg'}"><b>${fUSD(v.ganancia)}</b></td>
+      <td class="r"><button class="btn sec sm" onclick="delVenta('${v.id}')">✕</button></td></tr>`
+  ).join(''):'<tr><td colspan="6" class="empty">Sin ventas registradas</td></tr>';
+
+  // EGRESOS
+  $('egresosTbl').innerHTML=db.egresos.length?[...db.egresos].reverse().map(e=>
+    `<tr><td>${fmtFechaHora(e.ts,e.fecha)}</td><td>${e.concepto}</td><td><span class="muted">${e.cat}</span></td><td class="r neg">${fUSD(e.monto)}</td><td class="r muted">${fBs(e.montoBs)}</td><td class="r"><button class="btn sec sm" onclick="delEgreso('${e.id}')">✕</button></td></tr>`
+  ).join(''):'<tr><td colspan="6" class="empty">Sin egresos registrados</td></tr>';
+
+  // SOCIOS
+  $('sDanny').value=db.socios.danny;$('sGreis').value=db.socios.greis;$('sGihans').value=db.socios.gihans;$('sEmpresa').value=db.socios.empresa;
+  const sum=SOCIOS.reduce((s,k)=>s+n(db.socios[k]),0);
+  $('sumPct').innerHTML=`Suma actual: <b class="${Math.abs(sum-100)<.01?'pos':'neg'}">${sum}%</b>`;
+  const pendTotal=SOCIOS.reduce((a,s)=>a+Math.max(0,t.pendiente[s]),0);
+  $('sociosFull').innerHTML=
+    `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+       <div class="muted">Total pendiente por pagar: <b class="${pendTotal>0.005?'pos':''}">${fUSD(pendTotal)}</b></div>
+       <button class="btn sm" onclick="pagarTodos()">✅ Pagar a todos</button>
+     </div>`+
+    SOCIOS.map(s=>{
+      const pend=t.pendiente[s];
+      return `<div style="margin-bottom:14px">
+        <div class="socio" style="border:0;padding:4px 0">
+          <span class="swatch" style="background:${SOC_COLOR[s]}"></span>
+          <span class="nm"><b>${SOC_LABEL[s]}</b> <span class="muted">${db.socios[s]}%</span></span>
+          <span class="am ${pend>0.005?'pos':'muted'}">${fUSD(pend)}</span>
+          <button class="btn sec sm" style="margin-left:8px" onclick="pagarSocio('${s}')">Pagar</button>
+        </div>
+        <div class="muted" style="font-size:11px;padding-left:22px">Histórico ${fUSD(t.repAcum[s])} · Pagado ${fUSD(t.pagado[s])}</div>
+      </div>`;
+    }).join('')+
+    (db.pagos.length?`<h3 style="margin-top:18px">🧾 Historial de pagos</h3>
+      <table><thead><tr><th>Fecha</th><th>Socio</th><th class="r">Monto $</th><th></th></tr></thead><tbody>`+
+      [...db.pagos].reverse().map(p=>`<tr><td>${fmtFechaHora(p.ts,p.fecha)}</td><td>${SOC_LABEL[p.socio]}</td><td class="r neg">${fUSD(p.monto)}</td><td class="r"><button class="btn sec sm" onclick="delPago('${p.id}')">✕</button></td></tr>`).join('')+
+      `</tbody></table>`:'');
+}
+function updateCompraCalc(){
+  const cant=n($('cCant').value),total=n($('cTotal').value),tasa=n($('cTasa').value);
+  const cu=cant>0?total/cant:0;
+  $('cCalc').innerHTML=`<div class="line"><span>Costo por unidad</span><b>${fUSD(cu)}</b></div><div class="line muted"><span>Total en Bs</span><span>${fBs(total*tasa)}</span></div>`;
+}
+
+/* ================= BACKUP ================= */
+function exportJSON(){
+  const blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='Pakipis_respaldo_'+today()+'.json';a.click();toast('Respaldo descargado');
+}
+function importJSON(ev){
+  const f=ev.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{try{const d=JSON.parse(r.result);if(!d.productos&&!d.ventas)throw 0;db={...DEFAULT,...d};save();render();toast('Respaldo importado');}catch(e){toast('Archivo inválido',true);}};
+  r.readAsText(f);ev.target.value='';
+}
+function exportCSV(){
+  let rows=[['Fecha y hora','Descripcion','Materiales','Venta USD','Tasa','Venta Bs','Costo material USD','Ganancia USD','Danny','Greis','Gihans','Empresa']];
+  db.ventas.forEach(v=>rows.push([fmtFechaHora(v.ts,v.fecha),v.desc,v.mats.map(m=>m.nombre+'x'+m.cant).join(' | '),v.total.toFixed(2),v.tasa,v.totalBs.toFixed(2),v.costoMat.toFixed(2),v.ganancia.toFixed(2),v.reparto.danny.toFixed(2),v.reparto.greis.toFixed(2),v.reparto.gihans.toFixed(2),v.reparto.empresa.toFixed(2)]));
+  const csv=rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob=new Blob(['﻿'+csv],{type:'text/csv'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='Pakipis_ventas_'+today()+'.csv';a.click();toast('CSV exportado');
+}
+function wipeAll(){
+  if(!confirm('¿Seguro? Esto borra TODO. ¿Hiciste respaldo?'))return;
+  if(!confirm('Última confirmación: se borra todo definitivamente.'))return;
+  db=structuredClone(DEFAULT);save();render();toast('Datos borrados');
+}
+
+/* ================= TASA BCV (internet) ================= */
+let bcvRate=null;
+async function fetchBCV(manual){
+  const el=$('bcvValue'), de=$('bcvDate');
+  if(!navigator.onLine){el.innerHTML='<span class="muted">🔌 Sin conexión — la app funciona igual</span>';de.textContent='';if(manual)toast('Sin internet',true);return;}
+  el.textContent='Cargando…';de.textContent='';
+  const sources=[
+    {url:'https://ve.dolarapi.com/v1/dolares/oficial',pick:d=>({rate:d.promedio,date:d.fechaActualizacion})},
+    {url:'https://pydolarve.org/api/v1/dollar?page=bcv&monitor=usd',pick:d=>({rate:d.price||(d.monitors&&d.monitors.usd&&d.monitors.usd.price),date:d.last_update})}
+  ];
+  for(const s of sources){
+    try{
+      const ctrl=new AbortController();const to=setTimeout(()=>ctrl.abort(),8000);
+      const r=await fetch(s.url,{cache:'no-store',signal:ctrl.signal});clearTimeout(to);
+      if(!r.ok)continue;
+      const d=await r.json();const {rate,date}=s.pick(d);
+      if(rate&&rate>0){
+        bcvRate=rate;
+        el.innerHTML='<span style="color:var(--green)">'+fNum(rate)+' Bs/$</span>';
+        de.textContent=date?('actualizado '+new Date(date).toLocaleDateString('es-VE',{day:'2-digit',month:'short',year:'numeric'})):'';
+        if(!n(db.tasaRef)){db.tasaRef=rate;save();render();}
+        if(manual)toast('Tasa BCV actualizada');
+        return;
+      }
+    }catch(e){}
+  }
+  el.innerHTML='<span class="muted">No se pudo obtener la tasa (la app sigue funcionando)</span>';
+}
+function useBcv(id){if(!bcvRate)return toast('Tasa BCV no disponible',true);$(id).value=bcvRate.toFixed(2);if(id==='vTasa')calcVenta();if(id==='cTasa')updateCompraCalc();}
+function useBcvRef(){if(!bcvRate)return toast('Tasa BCV no disponible',true);db.tasaRef=bcvRate;save();render();toast('Tasa ref. = BCV ('+fNum(bcvRate)+')');}
+window.addEventListener('online',()=>{fetchBCV();cloudPush();});
+window.addEventListener('offline',()=>{fetchBCV();setSync('off','Sin conexión (se guardó local)');});
+
+/* ================= LOGIN / SESIÓN ================= */
+async function doLogin(){
+  const email=$('logEmail').value.trim(), pass=$('logPass').value;
+  if(!email||!pass){$('logErr').textContent='Poné correo y contraseña';return;}
+  $('logBtn').disabled=true;$('logBtn').textContent='Entrando…';$('logErr').textContent='';
+  const {error}=await supa.auth.signInWithPassword({email,password:pass});
+  $('logBtn').disabled=false;$('logBtn').textContent='Entrar';
+  if(error){$('logErr').textContent=error.message.includes('Invalid')?'Correo o contraseña incorrectos':error.message;return;}
+  // onAuthStateChange se encarga de iniciar la app
+}
+async function doLogout(){await supa.auth.signOut();location.reload();}
+
+let appStarted=false, realtimeChan=null;
+async function startApp(session){
+  if(appStarted)return; appStarted=true;
+  $('loginScreen').style.display='none';
+  $('appWrap').style.display='flex';
+  $('userEmail').textContent=session.user.email;
+  $('logPass').value='';
+  setSync('saving','Sincronizando…');
+  await cloudPull();           // trae los datos de la nube
+  fetchBCV();
+  // Realtime: si otro socio cambia algo, lo traemos (ignorando el eco de nuestro propio guardado)
+  realtimeChan=supa.channel('config-changes')
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'config'},()=>{
+      if(Date.now()-lastPushAt<2500)return; // fue nuestro propio cambio
+      cloudPull();
+    }).subscribe();
+}
+
+/* ================= INIT ================= */
+$('tasaRef').addEventListener('input',e=>{db.tasaRef=n(e.target.value);save();render();});
+$('saldoIni').addEventListener('input',e=>{db.saldoInicial=n(e.target.value);save();render();});
+['cCant','cTotal','cTasa'].forEach(i=>$(i).addEventListener('input',updateCompraCalc));
+$('logPass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+render();
+
+// Restaurar sesión si ya había iniciado antes
+supa.auth.getSession().then(({data})=>{if(data.session)startApp(data.session);});
+supa.auth.onAuthStateChange((_e,session)=>{if(session)startApp(session);});
+
+// Registrar la PWA (instalable en el celular)
+if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}
+</script>
+</body>
+</html>
