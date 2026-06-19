@@ -1,0 +1,41 @@
+name: Actualizar tasa BCV
+# Robot que lee el dólar oficial de bcv.org.ve y lo guarda en bcv.json
+on:
+  schedule:
+    - cron: '0 * * * *'   # cada hora
+  workflow_dispatch:        # permite ejecutarlo a mano
+  push:
+    branches: [main]
+    paths: ['.github/workflows/bcv.yml']
+permissions:
+  contents: write
+concurrency:
+  group: bcv
+  cancel-in-progress: false
+jobs:
+  bcv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Leer BCV y guardar bcv.json
+        run: |
+          html=$(curl -sk --max-time 40 "https://www.bcv.org.ve/")
+          rate=$(echo "$html" | tr '\n' ' ' | sed 's/.*id="dolar"//' | grep -o 'strong-tb">[^<]*' | head -1 | sed 's/strong-tb">//; s/[[:space:]]//g; s/\.//g; s/,/./')
+          echo "Tasa leida: $rate"
+          if ! echo "$rate" | grep -Eq '^[0-9]+\.[0-9]+$'; then
+            echo "No se pudo leer un numero valido; no se modifica bcv.json"
+            exit 0
+          fi
+          printf '{"rate":%s,"fuente":"bcv.org.ve","updated":"%s"}\n' "$rate" "$(date -u +%FT%TZ)" > bcv.json
+          cat bcv.json
+      - name: Publicar si cambió
+        run: |
+          git config user.name "bcv-bot"
+          git config user.email "bcv-bot@users.noreply.github.com"
+          git add bcv.json
+          if git diff --cached --quiet; then
+            echo "Sin cambios en la tasa"
+          else
+            git commit -m "Tasa BCV actualizada"
+            git push
+          fi

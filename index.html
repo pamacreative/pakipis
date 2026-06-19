@@ -706,6 +706,7 @@ async function fetchBCV(manual){
   if(!navigator.onLine){el.innerHTML='<span class="muted">🔌 Sin conexión — la app funciona igual</span>';de.textContent='';if(manual)toast('Sin internet',true);return;}
   el.textContent='Cargando…';de.textContent='';
   const sources=[
+    {url:'https://pamacreative.github.io/pakipis/bcv.json?t='+Date.now(),pick:d=>({rate:d.rate,date:d.updated})},
     {url:'https://ve.dolarapi.com/v1/dolares/oficial',pick:d=>({rate:d.promedio,date:d.fechaActualizacion})},
     {url:'https://pydolarve.org/api/v1/dollar?page=bcv&monitor=usd',pick:d=>({rate:d.price||(d.monitors&&d.monitors.usd&&d.monitors.usd.price),date:d.last_update})}
   ];
