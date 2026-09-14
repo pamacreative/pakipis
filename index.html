@@ -373,26 +373,39 @@ function load(){
   catch(e){return structuredClone(DEFAULT);}
 }
 // save() guarda local al instante y empuja a la nube (con pequeño retardo para agrupar cambios)
-let pushTimer=null, lastPushAt=0;
+// dirty=true mientras haya cambios locales sin confirmar en la nube todavía.
+// Mientras dirty (o un push en curso), NINGÚN pull puede pisar el estado local — se pospone.
+// Esto es lo que evita que un producto recién registrado "se borre" por una sincronización mal cronometrada.
+let pushTimer=null, dirty=false, pushInFlight=false, pullQueued=false;
 function save(){
   localStorage.setItem(KEY,JSON.stringify(db));
+  dirty=true;
   if(pushTimer)clearTimeout(pushTimer);
   setSync('saving','Guardando…');
   pushTimer=setTimeout(cloudPush,500);
 }
 async function cloudPush(){
   if(!navigator.onLine){setSync('off','Sin conexión (se guardó local)');return;}
+  if(pushInFlight){pushTimer=setTimeout(cloudPush,300);return;} // ya hay uno en vuelo: reintentar después
+  pushInFlight=true;
+  const payload=JSON.parse(JSON.stringify(db)); // snapshot: lo que se sube es exactamente esto
   try{
-    lastPushAt=Date.now();
-    const {error}=await supa.from('config').update({estado:db}).eq('id','main');
+    const {error}=await supa.from('config').update({estado:payload}).eq('id','main');
     if(error)throw error;
+    dirty=false; // recién ahora está confirmado en la nube
     setSync('ok','Guardado en la nube');
   }catch(e){setSync('err','Error al guardar nube');console.warn('push',e);}
+  finally{
+    pushInFlight=false;
+    if(pullQueued){pullQueued=false;cloudPull();} // había una sync pendiente esperando: hacerla ahora
+  }
 }
 async function cloudPull(){
+  if(dirty||pushInFlight){pullQueued=true;return;} // hay cambios locales sin confirmar: no pisarlos
   try{
     const {data,error}=await supa.from('config').select('estado').eq('id','main').single();
     if(error)throw error;
+    if(dirty)return; // se editó algo justo mientras se leía la nube: no pisar, se reintentará solo
     if(data&&data.estado){db={...DEFAULT,...data.estado};localStorage.setItem(KEY,JSON.stringify(db));}
     setSync('ok','Sincronizado');render();
     return true;
@@ -759,9 +772,17 @@ function calcPresupuesto(){
   $('calcOut').innerHTML=`<div class="line"><span>$${fNum(usd)} × ${fNum(tasa)} Bs/$</span><b style="color:var(--green);font-size:18px">${fBs(bs)}</b></div>`;
 }
 function useBcvRef(){if(!bcvRate)return toast('Tasa BCV no disponible',true);db.tasaRef=bcvRate;db.tasaRefAuto=true;save();render();toast('Tasa ref. = BCV ('+fNum(bcvRate)+') · seguirá la del día');}
-window.addEventListener('online',()=>{fetchBCV();cloudPush();});
+window.addEventListener('online',()=>{fetchBCV();if(dirty)cloudPush();});
 window.addEventListener('offline',()=>{fetchBCV();setSync('off','Sin conexión (se guardó local)');});
-document.addEventListener('visibilitychange',()=>{if(!document.hidden&&navigator.onLine)fetchBCV();});
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){
+    // Se oculta (cambia de pestaña/app): si quedó algo sin confirmar, empujarlo ya en vez de esperar el debounce.
+    if(dirty){if(pushTimer)clearTimeout(pushTimer);cloudPush();}
+  }else if(navigator.onLine){
+    // Vuelve a estar visible: primero ponerse al día con la nube, luego revisar la tasa.
+    cloudPull().then(()=>fetchBCV());
+  }
+});
 setInterval(()=>{if(navigator.onLine)fetchBCV();},30*60*1000);
 
 /* ================= LOGIN / SESIÓN ================= */
@@ -786,12 +807,11 @@ async function startApp(session){
   setSync('saving','Sincronizando…');
   await cloudPull();           // trae los datos de la nube
   fetchBCV();
-  // Realtime: si otro socio cambia algo, lo traemos (ignorando el eco de nuestro propio guardado)
+  // Realtime: si otro socio cambia algo, lo traemos. cloudPull() ya se autoprotege:
+  // si hay cambios locales sin confirmar, pospone en vez de pisarlos (ver cloudPull).
   realtimeChan=supa.channel('config-changes')
-    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'config'},()=>{
-      if(Date.now()-lastPushAt<2500)return; // fue nuestro propio cambio
-      cloudPull();
-    }).subscribe();
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'config'},()=>cloudPull())
+    .subscribe();
 }
 
 /* ================= INIT ================= */
