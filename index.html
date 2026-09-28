@@ -46,6 +46,9 @@
   .card .bs{color:var(--muted);font-size:12px;margin-top:2px}
   .card.green .val{color:var(--green)} .card.red .val{color:var(--red)}
   .card.blue .val{color:var(--blue)} .card.brand .val{color:var(--brand)}
+  .card.yellow .val{color:var(--yellow)}
+  .chk{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+  .chk input{width:auto} .chk label{margin:0;white-space:nowrap}
   /* Panels */
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:18px}
   .panel h3{display:flex;align-items:center;gap:8px}
@@ -142,6 +145,7 @@
     <nav class="nav" id="nav">
       <button data-v="dashboard" class="active"><span class="ic">📊</span><span class="t">Resumen</span></button>
       <button data-v="ventas"><span class="ic">🛒</span><span class="t">Ventas</span></button>
+      <button data-v="pendientes"><span class="ic">📋</span><span class="t">Pendientes</span></button>
       <button data-v="inventario"><span class="ic">📦</span><span class="t">Inventario</span></button>
       <button data-v="compras"><span class="ic">🧱</span><span class="t">Compras / Inversión</span></button>
       <button data-v="egresos"><span class="ic">🧾</span><span class="t">Egresos</span></button>
@@ -186,7 +190,7 @@
       <div class="grid2">
         <div class="panel">
           <h3>👥 Reparto acumulado por socio</h3>
-          <div class="sub muted" style="margin-bottom:8px">Sobre la ganancia neta (venta − material)</div>
+          <div class="sub muted" style="margin-bottom:8px">Sobre la ganancia ya cobrada (venta − material) · se libera de a poco según lo que paga el cliente</div>
           <div id="dashSocios"></div>
         </div>
         <div class="panel">
@@ -217,6 +221,15 @@
           <div id="vMats"></div>
           <button class="btn sec sm" onclick="addMatRow()">+ Agregar material</button>
           <div class="calcbox" id="vCalc"></div>
+          <div class="row" style="margin-top:14px">
+            <div class="chk"><input type="checkbox" id="vEntregado" checked><label for="vEntregado">Ya se entregó</label></div>
+            <div class="chk"><input type="checkbox" id="vCobradoCompleto" checked onchange="toggleAbonoInicial()"><label for="vCobradoCompleto">Ya se cobró completo</label></div>
+          </div>
+          <div id="vAbonoWrap" class="hidden">
+            <label>¿Cuánto pagó el cliente ahora (abono)?</label>
+            <input type="number" step="0.01" id="vAbonoInicial" placeholder="0.00">
+            <small class="hint">El resto queda pendiente en la pestaña "Pendientes". El reparto a los socios se libera de a poco, a medida que se cobre.</small>
+          </div>
           <div style="margin-top:14px"><button class="btn" onclick="saveVenta()">💾 Guardar venta</button></div>
         </div>
         <div class="panel">
@@ -224,6 +237,16 @@
           <table><thead><tr><th>Fecha</th><th>Detalle</th><th class="r">Venta $</th><th class="r">Material $</th><th class="r">Ganancia $</th><th></th></tr></thead>
           <tbody id="ventasTbl"></tbody></table>
         </div>
+      </div>
+    </section>
+
+    <!-- ================= PENDIENTES ================= -->
+    <section id="view-pendientes" class="hidden">
+      <div class="head"><div><h1>Pendientes</h1><div class="sub">Ventas con cobro o entrega sin terminar</div></div></div>
+      <div class="cards" id="pendCards"></div>
+      <div class="panel">
+        <h3>📋 Ventas pendientes</h3>
+        <div id="pendList"></div>
       </div>
     </section>
 
@@ -254,6 +277,21 @@
           <h3>📦 Productos</h3>
           <table><thead><tr><th>Producto</th><th>Cat.</th><th class="r">Stock</th><th class="r">Costo/u $</th><th class="r">Valor $</th><th></th></tr></thead>
           <tbody id="invTbl"></tbody></table>
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="panel">
+          <h3>🗑️ Registrar mercancía dañada</h3>
+          <label>Producto</label><select id="mProd"></select>
+          <div class="row"><div><label>Cantidad dañada</label><input type="number" step="1" id="mCant" placeholder="0"></div></div>
+          <label>Nota (opcional)</label><input id="mNota" placeholder="Ej: se mojó con la lluvia">
+          <small class="hint">Se descuenta del stock al costo actual. No afecta el saldo del banco (ese dinero ya se gastó al comprar el material) — sí se resta de la ganancia real del negocio.</small>
+          <div style="margin-top:12px"><button class="btn" onclick="saveMerma()">💾 Registrar daño</button></div>
+        </div>
+        <div class="panel">
+          <h3>📜 Historial de mercancía dañada</h3>
+          <table><thead><tr><th>Fecha</th><th>Producto</th><th class="r">Cant.</th><th class="r">Valor $</th><th></th></tr></thead>
+          <tbody id="mermasTbl"></tbody></table>
         </div>
       </div>
     </section>
@@ -322,6 +360,7 @@
         </div>
         <div class="panel">
           <h3>💵 Ganancia acumulada por socio</h3>
+          <div class="sub muted" style="margin-bottom:8px">Se libera a medida que el cliente paga la venta (ver "Pendientes")</div>
           <div id="sociosFull"></div>
         </div>
       </div>
@@ -362,7 +401,7 @@ const SOCIOS=['danny','greis','gihans','empresa'];
 const SOC_LABEL={danny:'Danny',greis:'Greis',gihans:'Gihans',empresa:'Empresa'};
 const SOC_COLOR={danny:'var(--danny)',greis:'var(--greis)',gihans:'var(--gihans)',empresa:'var(--empresa)'};
 const DEFAULT={
-  productos:[], ventas:[], compras:[], egresos:[], pagos:[],
+  productos:[], ventas:[], compras:[], egresos:[], pagos:[], mermas:[],
   socios:{danny:30,greis:25,gihans:35,empresa:10},
   tasaRef:0, saldoInicial:0, tasaRefAuto:true
 };
@@ -428,6 +467,10 @@ function fBs(v){return n(v).toLocaleString('es-VE',{minimumFractionDigits:2,maxi
 function fNum(v){return n(v).toLocaleString('en-US',{maximumFractionDigits:2});}
 function toast(msg,err){const t=$('toast');t.textContent=msg;t.className='toast show'+(err?' err':'');setTimeout(()=>t.className='toast',2200);}
 function prodById(id){return db.productos.find(p=>p.id===id);}
+// ---- Cobro/entrega de una venta: ventas viejas sin estos campos se tratan como ya resueltas (comportamiento de siempre) ----
+function cobradoDeVenta(v){return v.cobros?v.cobros.reduce((s,c)=>s+c.monto,0):v.total;}
+function pendienteCobroDeVenta(v){return Math.max(0,v.total-cobradoDeVenta(v));}
+function entregadoDeVenta(v){return v.entregado===undefined?true:v.entregado;}
 
 /* ================= NAVEGACION ================= */
 $('nav').addEventListener('click',e=>{
@@ -527,6 +570,7 @@ function calcVenta(){
 function reparto(g){
   const r={};SOCIOS.forEach(s=>r[s]=g*(n(db.socios[s])/100));return r;
 }
+function toggleAbonoInicial(){$('vAbonoWrap').classList.toggle('hidden',$('vCobradoCompleto').checked);}
 function saveVenta(){
   const total=n($('vTotal').value), tasa=n($('vTasa').value);
   if(total<=0)return toast('Poné el total de venta',true);
@@ -537,18 +581,45 @@ function saveVenta(){
   const ganancia=total-costoMat;
   // descontar stock
   mats.forEach(m=>{const p=prodById(m.prodId);if(p)p.stock=Math.max(0,p.stock-m.cant);});
+  const ts=nowTs();
+  const cobradoCompleto=$('vCobradoCompleto').checked;
+  const cobros=cobradoCompleto?[{id:uid(),ts,monto:total}]:(()=>{const ab=Math.max(0,Math.min(n($('vAbonoInicial').value),total));return ab>0?[{id:uid(),ts,monto:ab}]:[];})();
   db.ventas.push({
-    id:uid(),ts:nowTs(),fecha:today(),desc:$('vDesc').value.trim()||'Venta',
-    total,tasa,totalBs:total*tasa,mats,costoMat,ganancia,gananciaBs:ganancia*tasa,reparto:reparto(ganancia)
+    id:uid(),ts,fecha:today(),desc:$('vDesc').value.trim()||'Venta',
+    total,tasa,totalBs:total*tasa,mats,costoMat,ganancia,gananciaBs:ganancia*tasa,reparto:reparto(ganancia),
+    entregado:$('vEntregado').checked,cobros
   });
   save();
   $('vTotal').value='';$('vDesc').value='';$('vMats').innerHTML='';
+  $('vEntregado').checked=true;$('vCobradoCompleto').checked=true;$('vAbonoInicial').value='';$('vAbonoWrap').classList.add('hidden');
   calcVenta();
   toast('Venta guardada · stock descontado');render();
 }
 function delVenta(id){
   if(!confirm('¿Borrar esta venta? (no repone el stock automáticamente)'))return;
   db.ventas=db.ventas.filter(v=>v.id!==id);save();render();
+}
+function marcarEntregado(id){
+  const v=db.ventas.find(x=>x.id===id);if(!v)return;
+  v.entregado=true;save();toast('Marcado como entregado');render();
+}
+function registrarAbono(id){
+  const v=db.ventas.find(x=>x.id===id);if(!v)return;
+  const pend=pendienteCobroDeVenta(v);
+  if(pend<=0.005)return toast('Esta venta ya está cobrada completa',true);
+  const val=prompt('¿Cuánto pagó el cliente ahora? (pendiente: '+fUSD(pend)+')',pend.toFixed(2));
+  if(val===null)return;
+  const monto=n(val);
+  if(monto<=0)return toast('El monto debe ser mayor a 0',true);
+  if(monto>pend+0.005&&!confirm('Eso es más de lo pendiente ('+fUSD(pend)+'). ¿Registrar igual?'))return;
+  if(!v.cobros)v.cobros=[];
+  v.cobros.push({id:uid(),ts:nowTs(),monto});
+  save();toast('Abono de '+fUSD(monto)+' registrado');render();
+}
+function delCobro(ventaId,cobroId){
+  const v=db.ventas.find(x=>x.id===ventaId);if(!v||!v.cobros)return;
+  if(!confirm('¿Anular este abono? Vuelve a quedar pendiente de cobro.'))return;
+  v.cobros=v.cobros.filter(c=>c.id!==cobroId);save();render();
 }
 
 /* ================= EGRESOS ================= */
@@ -561,6 +632,26 @@ function saveEgreso(){
   save();$('eConcepto').value='';$('eMonto').value='';toast('Egreso guardado');render();
 }
 function delEgreso(id){if(!confirm('¿Borrar egreso?'))return;db.egresos=db.egresos.filter(e=>e.id!==id);save();render();}
+
+/* ================= MERMAS (mercancía dañada) ================= */
+function saveMerma(){
+  const prodId=$('mProd').value;
+  const p=prodById(prodId);
+  if(!p)return toast('Creá primero un producto en Inventario',true);
+  const cant=n($('mCant').value);
+  if(cant<=0)return toast('La cantidad debe ser mayor a 0',true);
+  if(cant>p.stock&&!confirm(`Stock insuficiente de "${p.nombre}" (hay ${fNum(p.stock)}, marcás ${fNum(cant)} dañadas). ¿Guardar igual?`))return;
+  const valor=cant*p.costo;
+  p.stock=Math.max(0,p.stock-cant);
+  db.mermas.push({id:uid(),ts:nowTs(),fecha:today(),prodId,prodNombre:p.nombre,cant,costoUnit:p.costo,valor,nota:$('mNota').value.trim()});
+  save();
+  $('mCant').value='';$('mNota').value='';
+  toast('Daño registrado · stock descontado');render();
+}
+function delMerma(id){
+  if(!confirm('¿Borrar este registro de daño? (no repone el stock automáticamente)'))return;
+  db.mermas=db.mermas.filter(m=>m.id!==id);save();render();
+}
 
 /* ================= SOCIOS ================= */
 function saveSocios(){
@@ -593,24 +684,33 @@ function delPago(id){
 
 /* ================= RENDER ================= */
 function totales(){
-  const ventasUSD=db.ventas.reduce((s,v)=>s+v.total,0);
+  const ventasUSD=db.ventas.reduce((s,v)=>s+v.total,0); // total facturado (contratado), aunque no se haya cobrado todo
+  const cobradoUSD=db.ventas.reduce((s,v)=>s+cobradoDeVenta(v),0); // lo que SÍ entró al banco
+  const porCobrarUSD=Math.max(0,ventasUSD-cobradoUSD);
   const materialUSD=db.ventas.reduce((s,v)=>s+v.costoMat,0);
-  const gananciaUSD=db.ventas.reduce((s,v)=>s+v.ganancia,0);
+  const gananciaUSD=db.ventas.reduce((s,v)=>s+v.ganancia,0); // ganancia total contratada (se libere o no todavía)
+  const mermaUSD=db.mermas.reduce((s,m)=>s+m.valor,0);
   const inversionUSD=db.compras.reduce((s,c)=>s+c.total,0);
   const egresosUSD=db.egresos.reduce((s,e)=>s+e.monto,0);
   const stockVal=db.productos.reduce((s,p)=>s+p.stock*p.costo,0);
-  const netoUSD=gananciaUSD-egresosUSD; // ganancia real del negocio
-  // Reparto histórico total, pagado y pendiente por socio
+  const netoUSD=gananciaUSD-egresosUSD-mermaUSD; // ganancia real del negocio
+  // Reparto histórico total, pagado y pendiente por socio — proporcional a lo que YA se cobró de cada venta,
+  // así nunca se le puede "deber" a un socio más plata de la que en verdad entró al banco.
   const repAcum={},pagado={},pendiente={};
   SOCIOS.forEach(s=>{
-    repAcum[s]=db.ventas.reduce((a,v)=>a+(v.reparto?.[s]||0),0);
+    repAcum[s]=db.ventas.reduce((a,v)=>{
+      const frac=v.total>0?cobradoDeVenta(v)/v.total:1;
+      return a+(v.reparto?.[s]||0)*frac;
+    },0);
     pagado[s]=db.pagos.filter(p=>p.socio===s).reduce((a,p)=>a+p.monto,0);
     pendiente[s]=repAcum[s]-pagado[s];
   });
   const totalPagos=db.pagos.reduce((a,p)=>a+p.monto,0);
-  // Saldo que debe coincidir con el banco: entra ventas, salen egresos, compras y pagos a socios
-  const saldoUSD=n(db.saldoInicial)+ventasUSD-egresosUSD-inversionUSD-totalPagos;
-  return {ventasUSD,materialUSD,gananciaUSD,inversionUSD,egresosUSD,stockVal,netoUSD,saldoUSD,repAcum,pagado,pendiente,totalPagos};
+  // Saldo que debe coincidir con el banco: entra lo COBRADO (no lo facturado), salen egresos, compras y pagos a socios
+  const saldoUSD=n(db.saldoInicial)+cobradoUSD-egresosUSD-inversionUSD-totalPagos;
+  const entregasPendientes=db.ventas.filter(v=>!entregadoDeVenta(v)).length;
+  const cobrosPendientes=db.ventas.filter(v=>pendienteCobroDeVenta(v)>0.005).length;
+  return {ventasUSD,cobradoUSD,porCobrarUSD,materialUSD,gananciaUSD,mermaUSD,inversionUSD,egresosUSD,stockVal,netoUSD,saldoUSD,repAcum,pagado,pendiente,totalPagos,entregasPendientes,cobrosPendientes};
 }
 function render(){
   const t=totales(), tasa=n(db.tasaRef);
@@ -621,11 +721,15 @@ function render(){
   calcPresupuesto();
   $('dashCards').innerHTML=[
     [t.saldoUSD>=0?'green':'red','💵 Saldo en banco/caja',fUSD(t.saldoUSD),tasa?fBs(t.saldoUSD*tasa):'',true],
-    ['blue','Ventas totales (entran)',fUSD(t.ventasUSD),tasa?fBs(t.ventasUSD*tasa):''],
+    ['blue','Ventas totales (facturado)',fUSD(t.ventasUSD),tasa?fBs(t.ventasUSD*tasa):''],
+    ['green','Cobrado de clientes',fUSD(t.cobradoUSD),tasa?fBs(t.cobradoUSD*tasa):''],
+    ['yellow','Por cobrar (clientes)',fUSD(t.porCobrarUSD),tasa?fBs(t.porCobrarUSD*tasa):''],
     ['red','Egresos / gastos (salen)',fUSD(t.egresosUSD),tasa?fBs(t.egresosUSD*tasa):''],
     ['red','Compras / inversión (salen)',fUSD(t.inversionUSD),tasa?fBs(t.inversionUSD*tasa):''],
     ['red','Pagado a socios (salen)',fUSD(t.totalPagos),tasa?fBs(t.totalPagos*tasa):''],
+    ['red','Pérdida por daños',fUSD(t.mermaUSD),tasa?fBs(t.mermaUSD*tasa):''],
     ['green','Ganancia del trabajo (vtas−mat.)',fUSD(t.gananciaUSD),tasa?fBs(t.gananciaUSD*tasa):''],
+    [t.netoUSD>=0?'green':'red','Ganancia real del negocio (−egresos−daños)',fUSD(t.netoUSD),tasa?fBs(t.netoUSD*tasa):''],
     ['blue','Valor de inventario',fUSD(t.stockVal),tasa?fBs(t.stockVal*tasa):''],
   ].map(c=>`<div class="card ${c[0]}">${c[4]?'<div class="lbl" style="color:var(--brand2)">DEBE COINCIDIR CON TU BANCO</div>':''}<div class="lbl">${c[1]}</div><div class="val${c[4]?'':' sm'}">${c[2]}</div><div class="bs">${c[3]||''}</div></div>`).join('');
   $('dashSocios').innerHTML='<div class="sub muted" style="margin-bottom:6px">Pendiente por pagar (se reinicia al pagar)</div>'+SOCIOS.map(s=>`<div class="socio"><span class="swatch" style="background:${SOC_COLOR[s]}"></span><span class="nm">${SOC_LABEL[s]}</span><span class="pc">${db.socios[s]}%</span><span class="am ${t.pendiente[s]>0.005?'pos':'muted'}">${fUSD(t.pendiente[s])}</span></div>`).join('');
@@ -637,9 +741,12 @@ function render(){
       return `<div class="socio"><span class="nm">${p.nombre} <span class="muted">· ${p.cat}</span></span><span class="am ${low?'low':''}">${fNum(p.stock)} ${p.unidad}${low?' ⚠️':''}</span></div>`;
     }).join('');
   }
-  // dash movimientos
+  // dash movimientos (cada cobro real, no el total facturado por adelantado)
   const movs=[
-    ...db.ventas.map(v=>({ts:v.ts,fecha:v.fecha,tipo:'in',det:v.desc,usd:v.total,bs:v.totalBs})),
+    ...db.ventas.flatMap(v=>{
+      const cobros=(v.cobros&&v.cobros.length)?v.cobros:[{ts:v.ts,monto:v.total}]; // ventas viejas sin cobros = un solo evento por el total
+      return cobros.map(c=>({ts:c.ts,fecha:v.fecha,tipo:'in',det:v.desc+(cobros.length>1?' (abono)':''),usd:c.monto,bs:c.monto*(v.tasa||0)}));
+    }),
     ...db.egresos.map(e=>({ts:e.ts,fecha:e.fecha,tipo:'out',det:e.concepto,usd:-e.monto,bs:-e.montoBs})),
     ...db.compras.map(c=>({ts:c.ts,fecha:c.fecha,tipo:'inv',det:'Compra '+c.prodNombre,usd:-c.total,bs:-c.totalBs})),
     ...db.pagos.map(p=>({ts:p.ts,fecha:p.fecha,tipo:'pay',det:'Pago a '+SOC_LABEL[p.socio],usd:-p.monto,bs:-p.monto*n(db.tasaRef)})),
@@ -666,17 +773,28 @@ function render(){
   ).join(''):'<tr><td colspan="6" class="empty">Sin compras registradas</td></tr>';
 
   // VENTAS
-  $('ventasTbl').innerHTML=db.ventas.length?[...db.ventas].reverse().map(v=>
-    `<tr><td>${fmtFechaHora(v.ts,v.fecha)}</td><td>${v.desc}<div class="muted" style="font-size:11px">${v.mats.map(m=>m.nombre+'×'+fNum(m.cant)).join(', ')||'sin material'}</div></td>
+  $('ventasTbl').innerHTML=db.ventas.length?[...db.ventas].reverse().map(v=>{
+    const pc=pendienteCobroDeVenta(v), ent=entregadoDeVenta(v);
+    const estado=(!ent||pc>0.005)?`<div style="margin-top:3px">${!ent?'<span class="tag out" style="margin-right:4px">Por entregar</span>':''}${pc>0.005?`<span class="tag out">Debe ${fUSD(pc)}</span>`:''}</div>`:'';
+    return `<tr><td>${fmtFechaHora(v.ts,v.fecha)}</td><td>${v.desc}<div class="muted" style="font-size:11px">${v.mats.map(m=>m.nombre+'×'+fNum(m.cant)).join(', ')||'sin material'}</div>${estado}</td>
       <td class="r">${fUSD(v.total)}</td><td class="r neg">${fUSD(v.costoMat)}</td>
       <td class="r ${v.ganancia>=0?'pos':'neg'}"><b>${fUSD(v.ganancia)}</b></td>
-      <td class="r"><button class="btn sec sm" onclick="delVenta('${v.id}')">✕</button></td></tr>`
-  ).join(''):'<tr><td colspan="6" class="empty">Sin ventas registradas</td></tr>';
+      <td class="r"><button class="btn sec sm" onclick="delVenta('${v.id}')">✕</button></td></tr>`;
+  }).join(''):'<tr><td colspan="6" class="empty">Sin ventas registradas</td></tr>';
 
   // EGRESOS
   $('egresosTbl').innerHTML=db.egresos.length?[...db.egresos].reverse().map(e=>
     `<tr><td>${fmtFechaHora(e.ts,e.fecha)}</td><td>${e.concepto}</td><td><span class="muted">${e.cat}</span></td><td class="r neg">${fUSD(e.monto)}</td><td class="r muted">${fBs(e.montoBs)}</td><td class="r"><button class="btn sec sm" onclick="delEgreso('${e.id}')">✕</button></td></tr>`
   ).join(''):'<tr><td colspan="6" class="empty">Sin egresos registrados</td></tr>';
+
+  // MERMAS
+  $('mProd').innerHTML=db.productos.map(p=>`<option value="${p.id}">${p.nombre} (stock ${fNum(p.stock)})</option>`).join('')||'<option value="">— creá un producto —</option>';
+  $('mermasTbl').innerHTML=db.mermas.length?[...db.mermas].reverse().map(m=>
+    `<tr><td>${fmtFechaHora(m.ts,m.fecha)}</td><td>${m.prodNombre}${m.nota?`<div class="muted" style="font-size:11px">${m.nota}</div>`:''}</td><td class="r">${fNum(m.cant)}</td><td class="r neg">${fUSD(m.valor)}</td><td class="r"><button class="btn sec sm" onclick="delMerma('${m.id}')">✕</button></td></tr>`
+  ).join(''):'<tr><td colspan="5" class="empty">Sin daños registrados</td></tr>';
+
+  // PENDIENTES
+  renderPendientes(t);
 
   // SOCIOS
   $('sDanny').value=db.socios.danny;$('sGreis').value=db.socios.greis;$('sGihans').value=db.socios.gihans;$('sEmpresa').value=db.socios.empresa;
@@ -705,6 +823,34 @@ function render(){
       [...db.pagos].reverse().map(p=>`<tr><td>${fmtFechaHora(p.ts,p.fecha)}</td><td>${SOC_LABEL[p.socio]}</td><td class="r neg">${fUSD(p.monto)}</td><td class="r"><button class="btn sec sm" onclick="delPago('${p.id}')">✕</button></td></tr>`).join('')+
       `</tbody></table>`:'');
 }
+function renderPendientes(t){
+  $('pendCards').innerHTML=[
+    ['yellow','💰 Por cobrar',fUSD(t.porCobrarUSD)],
+    ['blue','📦 Ventas sin entregar',String(t.entregasPendientes)],
+    ['blue','🧾 Ventas con cobro pendiente',String(t.cobrosPendientes)],
+  ].map(c=>`<div class="card ${c[0]}"><div class="lbl">${c[1]}</div><div class="val sm">${c[2]}</div></div>`).join('');
+  const pend=db.ventas.filter(v=>!entregadoDeVenta(v)||pendienteCobroDeVenta(v)>0.005);
+  $('pendList').innerHTML=pend.length?[...pend].reverse().map(v=>{
+    const pc=pendienteCobroDeVenta(v), ent=entregadoDeVenta(v);
+    const cobrosHtml=(v.cobros&&v.cobros.length)?v.cobros.map(c=>`<div class="muted" style="font-size:11px;display:flex;justify-content:space-between;gap:8px">
+        <span>Abono ${fmtFechaHora(c.ts)} · ${fUSD(c.monto)}</span>
+        <a href="#" onclick="delCobro('${v.id}','${c.id}');return false" style="color:var(--red);text-decoration:none">anular</a></div>`).join(''):'';
+    return `<div class="panel" style="margin-bottom:10px;padding:14px">
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div><b>${v.desc}</b><div class="muted" style="font-size:12px">${fmtFechaHora(v.ts,v.fecha)} · Total ${fUSD(v.total)}</div></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <span class="tag ${ent?'in':'out'}">${ent?'Entregado':'Por entregar'}</span>
+          <span class="tag ${pc<=0.005?'in':'out'}">${pc<=0.005?'Cobrado':'Debe '+fUSD(pc)}</span>
+        </div>
+      </div>
+      ${cobrosHtml}
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+        ${!ent?`<button class="btn sec sm" onclick="marcarEntregado('${v.id}')">📦 Marcar entregado</button>`:''}
+        ${pc>0.005?`<button class="btn sec sm" onclick="registrarAbono('${v.id}')">💰 Registrar abono</button>`:''}
+      </div>
+    </div>`;
+  }).join(''):'<div class="empty">No hay ventas pendientes — todo cobrado y entregado 🎉</div>';
+}
 function updateCompraCalc(){
   const cant=n($('cCant').value),total=n($('cTotal').value),tasa=n($('cTasa').value);
   const cu=cant>0?total/cant:0;
@@ -724,8 +870,8 @@ function importJSON(ev){
   r.readAsText(f);ev.target.value='';
 }
 function exportCSV(){
-  let rows=[['Fecha y hora','Descripcion','Materiales','Venta USD','Tasa','Venta Bs','Costo material USD','Ganancia USD','Danny','Greis','Gihans','Empresa']];
-  db.ventas.forEach(v=>rows.push([fmtFechaHora(v.ts,v.fecha),v.desc,v.mats.map(m=>m.nombre+'x'+m.cant).join(' | '),v.total.toFixed(2),v.tasa,v.totalBs.toFixed(2),v.costoMat.toFixed(2),v.ganancia.toFixed(2),v.reparto.danny.toFixed(2),v.reparto.greis.toFixed(2),v.reparto.gihans.toFixed(2),v.reparto.empresa.toFixed(2)]));
+  let rows=[['Fecha y hora','Descripcion','Materiales','Venta USD','Tasa','Venta Bs','Costo material USD','Ganancia USD','Cobrado USD','Pendiente cobro USD','Entregado','Danny','Greis','Gihans','Empresa']];
+  db.ventas.forEach(v=>rows.push([fmtFechaHora(v.ts,v.fecha),v.desc,v.mats.map(m=>m.nombre+'x'+m.cant).join(' | '),v.total.toFixed(2),v.tasa,v.totalBs.toFixed(2),v.costoMat.toFixed(2),v.ganancia.toFixed(2),cobradoDeVenta(v).toFixed(2),pendienteCobroDeVenta(v).toFixed(2),entregadoDeVenta(v)?'Si':'No',v.reparto.danny.toFixed(2),v.reparto.greis.toFixed(2),v.reparto.gihans.toFixed(2),v.reparto.empresa.toFixed(2)]));
   const csv=rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
   const blob=new Blob(['﻿'+csv],{type:'text/csv'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='Pakipis_ventas_'+today()+'.csv';a.click();toast('CSV exportado');
