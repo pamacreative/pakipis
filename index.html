@@ -632,9 +632,10 @@ function delVenta(id){
   if(!confirm('¿Borrar esta venta? (no repone el stock automáticamente)'))return;
   db.ventas=db.ventas.filter(v=>v.id!==id);save();render();
 }
-function marcarEntregado(id){
+function toggleEntregado(id){
   const v=db.ventas.find(x=>x.id===id);if(!v)return;
-  v.entregado=true;save();toast('Marcado como entregado');render();
+  v.entregado=!entregadoDeVenta(v);
+  save();toast(v.entregado?'Marcado como entregado':'Marcado como NO entregado');render();
 }
 function registrarAbono(id){
   const v=db.ventas.find(x=>x.id===id);if(!v)return;
@@ -653,6 +654,30 @@ function delCobro(ventaId,cobroId){
   const v=db.ventas.find(x=>x.id===ventaId);if(!v||!v.cobros)return;
   if(!confirm('¿Anular este abono? Vuelve a quedar pendiente de cobro.'))return;
   v.cobros=v.cobros.filter(c=>c.id!==cobroId);save();render();
+}
+// ---- Gestionar cobro/entrega de CUALQUIER venta desde el Historial (no solo mientras está pendiente) ----
+let ventasExpandidas=new Set();
+function toggleVentaExpand(id){
+  if(ventasExpandidas.has(id))ventasExpandidas.delete(id);else ventasExpandidas.add(id);
+  render();
+}
+function ventaEstadoHTML(v){
+  const pc=pendienteCobroDeVenta(v), ent=entregadoDeVenta(v);
+  const cobrosHtml=(v.cobros&&v.cobros.length)?v.cobros.map(c=>`<div class="muted" style="font-size:11px;display:flex;justify-content:space-between;gap:8px">
+      <span>Abono ${fmtFechaHora(c.ts)} · ${fUSD(c.monto)}</span>
+      <a href="#" onclick="delCobro('${v.id}','${c.id}');return false" style="color:var(--red);text-decoration:none">anular</a></div>`).join('')
+    :'<div class="muted" style="font-size:11px">Sin abonos registrados (se considera cobrada completa desde la venta)</div>';
+  return `<div style="background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">
+      <span class="tag ${ent?'in':'out'}">${ent?'Entregado':'Por entregar'}</span>
+      <span class="tag ${pc<=0.005?'in':'out'}">${pc<=0.005?'Cobrado completo':'Debe '+fUSD(pc)}</span>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+      <button class="btn sec sm" onclick="toggleEntregado('${v.id}')">${ent?'↩️ Marcar NO entregado':'📦 Marcar entregado'}</button>
+      ${pc>0.005?`<button class="btn sec sm" onclick="registrarAbono('${v.id}')">💰 Registrar abono</button>`:''}
+    </div>
+    ${cobrosHtml}
+  </div>`;
 }
 
 /* ================= EGRESOS ================= */
@@ -809,7 +834,10 @@ function render(){
   $('ventasTbl').innerHTML=db.ventas.length?[...db.ventas].reverse().map(v=>{
     const pc=pendienteCobroDeVenta(v), ent=entregadoDeVenta(v);
     const estado=(!ent||pc>0.005)?`<div style="margin-top:3px">${!ent?'<span class="tag out" style="margin-right:4px">Por entregar</span>':''}${pc>0.005?`<span class="tag out">Debe ${fUSD(pc)}</span>`:''}</div>`:'';
-    return `<tr><td>${fmtFechaHora(v.ts,v.fecha)}</td><td>${v.desc}<div class="muted" style="font-size:11px">${v.mats.map(m=>m.nombre+'×'+fNum(m.cant)).join(', ')||'sin material'}</div>${estado}</td>
+    const expandido=ventasExpandidas.has(v.id);
+    return `<tr><td>${fmtFechaHora(v.ts,v.fecha)}</td><td>${v.desc}<div class="muted" style="font-size:11px">${v.mats.map(m=>m.nombre+'×'+fNum(m.cant)).join(', ')||'sin material'}</div>${estado}
+      <a href="#" onclick="toggleVentaExpand('${v.id}');return false" style="font-size:11px;text-decoration:none;display:inline-block;margin-top:4px">${expandido?'▲ ocultar':'⚙️ cobro y entrega'}</a>
+      ${expandido?ventaEstadoHTML(v):''}</td>
       <td class="r">${fUSD(v.total)}</td><td class="r neg">${fUSD(v.costoMat)}</td>
       <td class="r ${v.ganancia>=0?'pos':'neg'}"><b>${fUSD(v.ganancia)}</b></td>
       <td class="r"><button class="btn sec sm" onclick="delVenta('${v.id}')">✕</button></td></tr>`;
@@ -878,7 +906,7 @@ function renderPendientes(t){
       </div>
       ${cobrosHtml}
       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
-        ${!ent?`<button class="btn sec sm" onclick="marcarEntregado('${v.id}')">📦 Marcar entregado</button>`:''}
+        ${!ent?`<button class="btn sec sm" onclick="toggleEntregado('${v.id}')">📦 Marcar entregado</button>`:''}
         ${pc>0.005?`<button class="btn sec sm" onclick="registrarAbono('${v.id}')">💰 Registrar abono</button>`:''}
       </div>
     </div>`;
