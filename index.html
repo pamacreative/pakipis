@@ -107,6 +107,8 @@
   .toast{position:fixed;bottom:24px;right:24px;background:var(--green);color:#062018;padding:12px 18px;border-radius:10px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.4);opacity:0;transform:translateY(10px);transition:.25s;z-index:99}
   .toast.show{opacity:1;transform:none}
   .toast.err{background:var(--red);color:#2a0808}
+  .syncbanner{position:fixed;top:0;left:0;right:0;background:var(--red);color:#2a0808;padding:10px 16px;text-align:center;font-weight:700;font-size:13px;z-index:150;display:none}
+  .syncbanner.show{display:block}
   .low{color:var(--yellow)}
   .hidden{display:none}
   /* Login + sync */
@@ -125,6 +127,7 @@
 </style>
 </head>
 <body>
+<div class="syncbanner" id="syncBanner"></div>
 <div class="login" id="loginScreen">
   <div class="box">
     <div class="dot">Pk</div>
@@ -418,25 +421,46 @@ function load(){
 // dirty=true mientras haya cambios locales sin confirmar en la nube todavía.
 // Mientras dirty (o un push en curso), NINGÚN pull puede pisar el estado local — se pospone.
 // Esto es lo que evita que un producto recién registrado "se borre" por una sincronización mal cronometrada.
-let pushTimer=null, dirty=false, pushInFlight=false, pullQueued=false;
+// ⚠️ dirty se guarda TAMBIÉN en localStorage (DIRTY_KEY): si la app se cierra/recarga ANTES de que el
+// push de 500ms llegue a confirmar, sin esto el próximo arranque perdía el flag, hacía un pull normal
+// y el cambio recién guardado (ej. una venta) desaparecía sin aviso aunque ya se había mostrado "guardado".
+const DIRTY_KEY='pakipis_dirty_v1';
+let pushTimer=null, pushInFlight=false, pullQueued=false, pushFailCount=0;
+const dirtySince=localStorage.getItem(DIRTY_KEY);
+let dirty=!!dirtySince;
+function markDirty(){dirty=true;localStorage.setItem(DIRTY_KEY,String(Date.now()));}
+function clearDirty(){dirty=false;pushFailCount=0;localStorage.removeItem(DIRTY_KEY);}
 function save(){
   localStorage.setItem(KEY,JSON.stringify(db));
-  dirty=true;
+  markDirty();
   if(pushTimer)clearTimeout(pushTimer);
   setSync('saving','Guardando…');
   pushTimer=setTimeout(cloudPush,500);
 }
 async function cloudPush(){
-  if(!navigator.onLine){setSync('off','Sin conexión (se guardó local)');return;}
+  if(!navigator.onLine){setSync('off','Sin conexión (se guardó local, se sube solo al reconectar)');return;}
   if(pushInFlight){pushTimer=setTimeout(cloudPush,300);return;} // ya hay uno en vuelo: reintentar después
   pushInFlight=true;
   const payload=JSON.parse(JSON.stringify(db)); // snapshot: lo que se sube es exactamente esto
   try{
     const {error}=await supa.from('config').update({estado:payload}).eq('id','main');
     if(error)throw error;
-    dirty=false; // recién ahora está confirmado en la nube
+    clearDirty(); // recién ahora está confirmado en la nube
     setSync('ok','Guardado en la nube');
-  }catch(e){setSync('err','Error al guardar nube');console.warn('push',e);}
+    hideSyncBanner();
+  }catch(e){
+    pushFailCount++;
+    console.warn('push',e);
+    if(pushFailCount>=5){
+      // Ya reintentó varias veces y sigue fallando: dejar de insistir solo y avisar bien fuerte
+      // (el dato sigue a salvo en este dispositivo — localStorage — pero no llegó a la nube todavía).
+      setSync('err','No se pudo guardar en la nube tras varios intentos. Recargá la página o revisá tu conexión.');
+      showSyncBanner('No se pudo guardar en la nube tras varios intentos. Tus cambios están a salvo en este dispositivo — recargá la página o revisá tu conexión.');
+    }else{
+      setSync('err','Error al guardar, reintentando…');
+      pushTimer=setTimeout(cloudPush,Math.min(3000*pushFailCount,15000));
+    }
+  }
   finally{
     pushInFlight=false;
     if(pullQueued){pullQueued=false;cloudPull();} // había una sync pendiente esperando: hacerla ahora
@@ -454,6 +478,8 @@ async function cloudPull(){
   }catch(e){setSync('err','No se pudo leer la nube');console.warn('pull',e);return false;}
 }
 function setSync(cls,txt){const s=$('syncStatus');if(!s)return;s.className='sync '+cls;$('syncText').textContent=txt;}
+function showSyncBanner(txt){const b=$('syncBanner');if(!b)return;b.textContent='⚠️ '+txt;b.classList.add('show');}
+function hideSyncBanner(){const b=$('syncBanner');if(b)b.classList.remove('show');}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
 // Fecha/hora automáticas tomadas de la PC (hora local, sin escribir a mano)
 function localDate(d){d=d||new Date();const off=d.getTimezoneOffset()*60000;return new Date(d-off).toISOString().slice(0,10);}
@@ -981,6 +1007,10 @@ function calcPresupuesto(){
 function useBcvRef(){if(!bcvRate)return toast('Tasa BCV no disponible',true);db.tasaRef=bcvRate;db.tasaRefAuto=true;save();render();toast('Tasa ref. = BCV ('+fNum(bcvRate)+') · seguirá la del día');}
 window.addEventListener('online',()=>{fetchBCV();if(dirty)cloudPush();});
 window.addEventListener('offline',()=>{fetchBCV();setSync('off','Sin conexión (se guardó local)');});
+// Avisa ANTES de cerrar/recargar si todavía hay algo sin confirmar en la nube (ver nota en DIRTY_KEY arriba).
+window.addEventListener('beforeunload',e=>{
+  if(dirty||pushInFlight){e.preventDefault();e.returnValue='';}
+});
 document.addEventListener('visibilitychange',()=>{
   if(document.hidden){
     // Se oculta (cambia de pestaña/app): si quedó algo sin confirmar, empujarlo ya en vez de esperar el debounce.
@@ -1011,6 +1041,14 @@ async function startApp(session){
   $('appWrap').style.display='flex';
   $('userEmail').textContent=session.user.email;
   $('logPass').value='';
+  if(dirty){
+    // Quedó algo sin confirmar de una sesión anterior (se cerró/recargó antes de terminar de subir).
+    // Si es muy viejo, mejor preguntar en vez de arriesgarse a pisar cambios más nuevos de otro socio.
+    const minutos=dirtySince?(Date.now()-Number(dirtySince))/60000:0;
+    const seguro=minutos<=60||confirm('Hay cambios en este dispositivo (de hace más de una hora) que nunca se guardaron en la nube. ¿Subirlos ahora?\nSi cancelás, se descartan y se usa lo último de la nube.');
+    if(seguro){setSync('saving','Terminando de guardar cambios pendientes…');await cloudPush();}
+    else clearDirty();
+  }
   setSync('saving','Sincronizando…');
   await cloudPull();           // trae los datos de la nube
   fetchBCV();
