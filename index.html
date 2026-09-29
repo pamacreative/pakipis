@@ -255,7 +255,7 @@
       <div class="head"><div><h1>Inventario</h1><div class="sub">Productos, stock disponible y costo por hoja</div></div></div>
       <div class="grid2">
         <div class="panel">
-          <h3>➕ Nuevo producto</h3>
+          <h3 id="pFormTitle">➕ Nuevo producto</h3>
           <label>Nombre</label><input id="pNombre" placeholder="Ej: Cartulina opalina blanca">
           <div class="row">
             <div><label>Categoría</label>
@@ -270,8 +270,11 @@
             <div><label>Costo por unidad (USD)</label><input type="number" step="0.0001" id="pCosto" placeholder="0.00"></div>
             <div><label>Alerta stock bajo</label><input type="number" step="1" id="pMin" placeholder="5"></div>
           </div>
-          <small class="hint">Tip: para sumar stock comprado usá la sección <b>Compras / Inversión</b> (recalcula el costo automáticamente).</small>
-          <div style="margin-top:12px"><button class="btn" onclick="saveProducto()">💾 Guardar producto</button></div>
+          <small class="hint">Tip: para sumar stock comprado usá la sección <b>Compras / Inversión</b> (recalcula el costo automáticamente). Para ajustes puntuales (nombre, cantidad, unidad, etc.) usá "✏️ editar" en la tabla de la derecha.</small>
+          <div style="margin-top:12px;display:flex;gap:8px">
+            <button class="btn" id="pSaveBtn" onclick="saveProducto()">💾 Guardar producto</button>
+            <button class="btn sec hidden" id="pCancelBtn" onclick="cancelEditProducto()">Cancelar edición</button>
+          </div>
         </div>
         <div class="panel">
           <h3>📦 Productos</h3>
@@ -483,25 +486,55 @@ $('nav').addEventListener('click',e=>{
 });
 
 /* ================= PRODUCTOS / INVENTARIO ================= */
+let editingProductoId=null;
 function saveProducto(){
   const nombre=$('pNombre').value.trim();
   if(!nombre)return toast('Poné un nombre al producto',true);
-  db.productos.push({
-    id:uid(),nombre,cat:$('pCat').value,unidad:$('pUnidad').value||'hoja',
-    stock:n($('pStock').value),costo:n($('pCosto').value),min:n($('pMin').value)||5
-  });
+  const datos={nombre,cat:$('pCat').value,unidad:$('pUnidad').value||'hoja',
+    stock:n($('pStock').value),costo:n($('pCosto').value),min:n($('pMin').value)||5};
+  if(editingProductoId){
+    const p=prodById(editingProductoId);
+    if(p)Object.assign(p,datos);
+    editingProductoId=null;
+    toast('Producto actualizado');
+  }else{
+    db.productos.push({id:uid(),...datos});
+    toast('Producto guardado');
+  }
   save();
   ['pNombre','pStock','pCosto','pMin'].forEach(i=>$(i).value='');
-  toast('Producto guardado');render();
+  $('pCat').selectedIndex=0;$('pUnidad').value='hoja';
+  $('pFormTitle').textContent='➕ Nuevo producto';
+  $('pSaveBtn').textContent='💾 Guardar producto';
+  $('pCancelBtn').classList.add('hidden');
+  render();
+}
+function editProducto(id){
+  const p=prodById(id);if(!p)return;
+  editingProductoId=id;
+  $('pNombre').value=p.nombre;
+  $('pCat').value=p.cat;
+  $('pUnidad').value=p.unidad;
+  $('pStock').value=p.stock;
+  $('pCosto').value=p.costo;
+  $('pMin').value=p.min;
+  $('pFormTitle').textContent='✏️ Editando "'+p.nombre+'"';
+  $('pSaveBtn').textContent='💾 Guardar cambios';
+  $('pCancelBtn').classList.remove('hidden');
+  $('pNombre').scrollIntoView({behavior:'smooth',block:'center'});
+}
+function cancelEditProducto(){
+  editingProductoId=null;
+  ['pNombre','pStock','pCosto','pMin'].forEach(i=>$(i).value='');
+  $('pCat').selectedIndex=0;$('pUnidad').value='hoja';
+  $('pFormTitle').textContent='➕ Nuevo producto';
+  $('pSaveBtn').textContent='💾 Guardar producto';
+  $('pCancelBtn').classList.add('hidden');
 }
 function delProducto(id){
   if(!confirm('¿Borrar este producto?'))return;
+  if(editingProductoId===id)cancelEditProducto();
   db.productos=db.productos.filter(p=>p.id!==id);save();toast('Producto borrado');render();
-}
-function editStock(id){
-  const p=prodById(id);
-  const v=prompt('Ajustar stock de "'+p.nombre+'" (unidades actuales):',p.stock);
-  if(v===null)return;p.stock=n(v);save();render();
 }
 
 /* ================= COMPRAS ================= */
@@ -762,7 +795,7 @@ function render(){
     return `<tr><td><b>${p.nombre}</b></td><td><span class="muted">${p.cat}</span></td>
       <td class="r ${low?'low':''}">${fNum(p.stock)}${low?' ⚠️':''}</td>
       <td class="r">${fUSD(p.costo)}</td><td class="r">${fUSD(p.stock*p.costo)}</td>
-      <td class="r"><button class="btn sec sm" onclick="editStock('${p.id}')">stock</button> <button class="btn sec sm" onclick="delProducto('${p.id}')">✕</button></td></tr>`;
+      <td class="r"><button class="btn sec sm" onclick="editProducto('${p.id}')">✏️ editar</button> <button class="btn sec sm" onclick="delProducto('${p.id}')">✕</button></td></tr>`;
   }).join(''):'<tr><td colspan="6" class="empty">Agregá tu primer producto</td></tr>';
 
   // COMPRAS dropdown + calc
