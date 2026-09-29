@@ -340,6 +340,7 @@
             <div><label>Monto (USD)</label><input type="number" step="0.01" id="eMonto" placeholder="0.00"></div>
             <div><label>Tasa Bs/$ <a href="#" onclick="useBcv('eTasa');return false" style="color:var(--brand);text-decoration:none">⟳BCV</a></label><input type="number" step="0.01" id="eTasa" placeholder="0.00"></div>
           </div>
+          <div class="calcbox" id="eCalc"></div>
           <div style="margin-top:12px"><button class="btn" onclick="saveEgreso()">💾 Guardar egreso</button></div>
         </div>
         <div class="panel">
@@ -496,6 +497,17 @@ function fBs(v){return n(v).toLocaleString('es-VE',{minimumFractionDigits:2,maxi
 function fNum(v){return n(v).toLocaleString('en-US',{maximumFractionDigits:2});}
 function toast(msg,err){const t=$('toast');t.textContent=msg;t.className='toast show'+(err?' err':'');setTimeout(()=>t.className='toast',2200);}
 function prodById(id){return db.productos.find(p=>p.id===id);}
+// Confusión clásica: escribir el monto en bolívares dentro de un campo que es en dólares.
+// Si el número parece demasiado grande para ser dólares, avisamos qué sería si en realidad eran Bs.
+function avisoPosibleBs(monto,tasa){
+  if(monto<300||tasa<=0)return '';
+  return `<div class="line" style="color:var(--yellow)"><span>⚠️ ¿Puso bolívares en el campo de dólares?</span><b>Si ${fNum(monto)} fueran Bs, serían ${fUSD(monto/tasa)}</b></div>`;
+}
+// Antes de guardar: si el monto parece bolívares metidos en el campo de dólares, frena y confirma.
+function confirmarSiPareceBs(monto,tasa){
+  if(monto<300||tasa<=0)return true;
+  return confirm(`${fUSD(monto)} es un monto alto para este negocio.\nSi en realidad escribiste bolívares por error, serían ${fUSD(monto/tasa)}.\n\n¿Confirmás que ${fUSD(monto)} EN DÓLARES es correcto?`);
+}
 // ---- Cobro/entrega de una venta: ventas viejas sin estos campos se tratan como ya resueltas (comportamiento de siempre) ----
 function cobradoDeVenta(v){return v.cobros?v.cobros.reduce((s,c)=>s+c.monto,0):v.total;}
 function pendienteCobroDeVenta(v){return Math.max(0,v.total-cobradoDeVenta(v));}
@@ -570,6 +582,7 @@ function saveCompra(){
   if(!p)return toast('Creá primero un producto en Inventario',true);
   const cant=n($('cCant').value), total=n($('cTotal').value), tasa=n($('cTasa').value);
   if(cant<=0||total<=0)return toast('Cantidad y costo total deben ser mayores a 0',true);
+  if(!confirmarSiPareceBs(total,tasa))return;
   // costo promedio ponderado
   const stockPrev=n(p.stock), costoPrev=n(p.costo);
   const nuevoStock=stockPrev+cant;
@@ -622,6 +635,7 @@ function calcVenta(){
     <div class="line"><span>− Costo material (${mats.length})</span><span class="neg">${fUSD(costoMat)}</span></div>
     <div class="line"><span>Ganancia neta</span><b class="${ganancia>=0?'pos':'neg'}">${fUSD(ganancia)}</b></div>
     <div class="line muted"><span>En bolívares (tasa ${tasa||0})</span><span>${fBs(total*tasa)} venta · ${fBs(ganancia*tasa)} ganancia</span></div>
+    ${avisoPosibleBs(total,tasa)}
     <div style="margin-top:8px">
       ${SOCIOS.map(s=>`<div class="socio"><span class="swatch" style="background:${SOC_COLOR[s]}"></span><span class="nm">${SOC_LABEL[s]}</span><span class="pc">${db.socios[s]}%</span><span class="am">${fUSD(rep[s])}</span></div>`).join('')}
     </div>`;
@@ -633,6 +647,7 @@ function toggleAbonoInicial(){$('vAbonoWrap').classList.toggle('hidden',$('vCobr
 function saveVenta(){
   const total=n($('vTotal').value), tasa=n($('vTasa').value);
   if(total<=0)return toast('Poné el total de venta',true);
+  if(!confirmarSiPareceBs(total,tasa))return;
   const mats=readMats();
   // verificar stock
   for(const m of mats){const p=prodById(m.prodId);if(m.cant>p.stock){if(!confirm(`Stock insuficiente de "${p.nombre}" (hay ${fNum(p.stock)}, usás ${fNum(m.cant)}). ¿Guardar igual?`))return;}}
@@ -712,10 +727,15 @@ function saveEgreso(){
   const monto=n($('eMonto').value), tasa=n($('eTasa').value);
   if(!concepto)return toast('Poné un concepto',true);
   if(monto<=0)return toast('Monto debe ser mayor a 0',true);
+  if(!confirmarSiPareceBs(monto,tasa))return;
   db.egresos.push({id:uid(),ts:nowTs(),fecha:today(),concepto,cat:$('eCat').value,monto,tasa,montoBs:monto*tasa});
-  save();$('eConcepto').value='';$('eMonto').value='';toast('Egreso guardado');render();
+  save();$('eConcepto').value='';$('eMonto').value='';updateEgresoCalc();toast('Egreso guardado');render();
 }
 function delEgreso(id){if(!confirm('¿Borrar egreso?'))return;db.egresos=db.egresos.filter(e=>e.id!==id);save();render();}
+function updateEgresoCalc(){
+  const monto=n($('eMonto').value), tasa=n($('eTasa').value);
+  $('eCalc').innerHTML=`<div class="line"><span>En bolívares</span><b>${fBs(monto*tasa)}</b></div>${avisoPosibleBs(monto,tasa)}`;
+}
 
 /* ================= MERMAS (mercancía dañada) ================= */
 function saveMerma(){
@@ -870,6 +890,7 @@ function render(){
   }).join(''):'<tr><td colspan="6" class="empty">Sin ventas registradas</td></tr>';
 
   // EGRESOS
+  updateEgresoCalc();
   $('egresosTbl').innerHTML=db.egresos.length?[...db.egresos].reverse().map(e=>
     `<tr><td>${fmtFechaHora(e.ts,e.fecha)}</td><td>${e.concepto}</td><td><span class="muted">${e.cat}</span></td><td class="r neg">${fUSD(e.monto)}</td><td class="r muted">${fBs(e.montoBs)}</td><td class="r"><button class="btn sec sm" onclick="delEgreso('${e.id}')">✕</button></td></tr>`
   ).join(''):'<tr><td colspan="6" class="empty">Sin egresos registrados</td></tr>';
@@ -941,7 +962,7 @@ function renderPendientes(t){
 function updateCompraCalc(){
   const cant=n($('cCant').value),total=n($('cTotal').value),tasa=n($('cTasa').value);
   const cu=cant>0?total/cant:0;
-  $('cCalc').innerHTML=`<div class="line"><span>Costo por unidad</span><b>${fUSD(cu)}</b></div><div class="line muted"><span>Total en Bs</span><span>${fBs(total*tasa)}</span></div>`;
+  $('cCalc').innerHTML=`<div class="line"><span>Costo por unidad</span><b>${fUSD(cu)}</b></div><div class="line muted"><span>Total en Bs</span><span>${fBs(total*tasa)}</span></div>${avisoPosibleBs(total,tasa)}`;
 }
 
 /* ================= BACKUP ================= */
@@ -1063,6 +1084,7 @@ async function startApp(session){
 $('tasaRef').addEventListener('input',e=>{db.tasaRef=n(e.target.value);db.tasaRefAuto=false;save();render();});
 $('saldoIni').addEventListener('input',e=>{db.saldoInicial=n(e.target.value);save();render();});
 ['cCant','cTotal','cTasa'].forEach(i=>$(i).addEventListener('input',updateCompraCalc));
+['eMonto','eTasa'].forEach(i=>$(i).addEventListener('input',updateEgresoCalc));
 $('logPass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
 render();
 
