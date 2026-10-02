@@ -109,6 +109,10 @@
   .toast.err{background:var(--red);color:#2a0808}
   .syncbanner{position:fixed;top:0;left:0;right:0;background:var(--red);color:#2a0808;padding:10px 16px;text-align:center;font-weight:700;font-size:13px;z-index:150;display:none}
   .syncbanner.show{display:block}
+  .card .hint2{color:var(--muted);font-size:11px;margin-top:6px;line-height:1.35}
+  .am small{display:block;font-weight:400;color:var(--muted);font-size:11px}
+  .calcbox .line.tot{border-top:2px solid var(--line);margin-top:4px;padding-top:8px}
+  .calcbox .line.tot b{font-size:17px}
   .low{color:var(--yellow)}
   .hidden{display:none}
   /* Login + sync */
@@ -168,7 +172,8 @@
       <div class="head"><div><h1>Resumen general</h1><div class="sub">Estado del negocio en dólares y bolívares</div></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <div class="pill">Tasa ref. Bs/$ <input id="tasaRef" type="number" step="0.01" style="width:80px;margin-left:6px" placeholder="0"></div>
-          <div class="pill" title="Dinero que ya había en la cuenta antes de empezar a registrar">Saldo inicial $ <input id="saldoIni" type="number" step="0.01" style="width:80px;margin-left:6px" placeholder="0"></div>
+          <div class="pill" title="Dinero que ya había en la cuenta antes de empezar a registrar (equivalente en dólares)">Saldo inicial $ <input id="saldoIni" type="number" step="0.01" style="width:80px;margin-left:6px" placeholder="0"></div>
+          <div class="pill" title="Bolívares que ya había en tu banco antes de empezar a registrar">Saldo inicial Bs <input id="saldoIniBs" type="number" step="0.01" style="width:110px;margin-left:6px" placeholder="0"></div>
         </div>
       </div>
       <div class="panel" id="bcvBanner" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:14px 18px">
@@ -190,6 +195,22 @@
         <div class="calcbox" id="calcOut"></div>
       </div>
       <div class="cards" id="dashCards"></div>
+      <div class="grid2">
+        <div class="panel">
+          <h3>🏦 Cuadre con tu banco (en bolívares)</h3>
+          <div class="sub muted" style="margin-bottom:8px">Cada venta, gasto y compra guarda sus bolívares con la tasa del día en que se registró: no cambian solos cuando cambia la tasa.</div>
+          <div class="calcbox" id="cuadreOut" style="margin-top:0"></div>
+          <label>¿Cuánto tienes realmente en tu banco hoy? (Bs)</label>
+          <input type="number" step="0.01" id="bancoReal" placeholder="Ej: 61250.00">
+          <div id="concOut"></div>
+        </div>
+        <div class="panel">
+          <h3>📈 Ganancia real, paso a paso</h3>
+          <div class="sub muted" style="margin-bottom:8px">De dónde sale el número de "Ganancia real del negocio"</div>
+          <div class="calcbox" id="gananciaOut" style="margin-top:0"></div>
+          <div class="sub muted" style="margin-top:10px;font-size:12px">💡 La ganancia real NO es igual al saldo del banco: el banco es dinero que entró y salió; la ganancia descuenta el costo del material que ya usaste. Se igualan cuando todo el material está pagado desde el banco y ya vendido.</div>
+        </div>
+      </div>
       <div class="grid2">
         <div class="panel">
           <h3>👥 Reparto acumulado por socio</h3>
@@ -273,7 +294,7 @@
             <div><label>Costo por unidad (USD)</label><input type="number" step="0.0001" id="pCosto" placeholder="0.00"></div>
             <div><label>Alerta stock bajo</label><input type="number" step="1" id="pMin" placeholder="5"></div>
           </div>
-          <small class="hint">Tip: para sumar stock comprado usá la sección <b>Compras / Inversión</b> (recalcula el costo automáticamente). Para ajustes puntuales (nombre, cantidad, unidad, etc.) usá "✏️ editar" en la tabla de la derecha.</small>
+          <small class="hint">Tip: para sumar stock comprado usá la sección <b>Compras / Inversión</b> (recalcula el costo automáticamente). Para ajustes puntuales (nombre, cantidad, unidad, etc.) usá "✏️ editar" en la tabla de la derecha.<br>⚠️ El <b>stock inicial NO resta dinero del banco</b>. Si lo pagaste desde tu cuenta después de empezar a llevar las cuentas, regístralo como inversión (Resumen → "Cuadre con tu banco").</small>
           <div style="margin-top:12px;display:flex;gap:8px">
             <button class="btn" id="pSaveBtn" onclick="saveProducto()">💾 Guardar producto</button>
             <button class="btn sec hidden" id="pCancelBtn" onclick="cancelEditProducto()">Cancelar edición</button>
@@ -513,6 +534,23 @@ function cobradoDeVenta(v){return v.cobros?v.cobros.reduce((s,c)=>s+c.monto,0):v
 function pendienteCobroDeVenta(v){return Math.max(0,v.total-cobradoDeVenta(v));}
 function entregadoDeVenta(v){return v.entregado===undefined?true:v.entregado;}
 
+// ---- BOLÍVARES POR TRANSACCIÓN ----
+// Cada venta, cobro, gasto, compra y pago guarda sus Bs con la tasa del DÍA en que se registró.
+// Nunca se "revalúan" con la tasa de hoy (antes todo era dólares × tasa de hoy, y por eso los Bs
+// del banco y de los socios cambiaban solos cada día). Si un registro viejo no trae tasa, se usa
+// la tasa de referencia del día como último recurso.
+function tasaHoy(){return n(db.tasaRef);}
+function tasaOHoy(t){return n(t)>0?n(t):tasaHoy();}
+function tasaVenta(v){return tasaOHoy(v.tasa);}
+function cobrosDeVenta(v){return v.cobros?v.cobros:[{ts:v.ts,monto:v.total,tasa:tasaVenta(v)}];} // venta vieja sin cobros = cobrada completa al momento
+function tasaCobro(v,c){return n(c.tasa)>0?n(c.tasa):tasaVenta(v);}
+function bsCobradoVenta(v){return cobrosDeVenta(v).reduce((s,c)=>s+n(c.monto)*tasaCobro(v,c),0);}
+function bsVenta(v){return n(v.totalBs)>0?n(v.totalBs):n(v.total)*tasaVenta(v);}
+function bsGananciaVenta(v){return n(v.gananciaBs)!==0?n(v.gananciaBs):n(v.ganancia)*tasaVenta(v);}
+function bsEgreso(e){return n(e.montoBs)>0?n(e.montoBs):n(e.monto)*tasaOHoy(e.tasa);}
+function bsCompra(c){return n(c.totalBs)>0?n(c.totalBs):n(c.total)*tasaOHoy(c.tasa);}
+function bsMerma(m){return n(m.valorBs)>0?n(m.valorBs):n(m.valor)*tasaHoy();}
+
 /* ================= NAVEGACION ================= */
 $('nav').addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;
@@ -580,8 +618,9 @@ function saveCompra(){
   const prodId=$('cProd').value;
   const p=prodById(prodId);
   if(!p)return toast('Creá primero un producto en Inventario',true);
-  const cant=n($('cCant').value), total=n($('cTotal').value), tasa=n($('cTasa').value);
+  const cant=n($('cCant').value), total=n($('cTotal').value), tasa=tasaOHoy($('cTasa').value);
   if(cant<=0||total<=0)return toast('Cantidad y costo total deben ser mayores a 0',true);
+  if(tasa<=0)return toast('Falta la tasa del día (Bs/$)',true);
   if(!confirmarSiPareceBs(total,tasa))return;
   // costo promedio ponderado
   const stockPrev=n(p.stock), costoPrev=n(p.costo);
@@ -625,7 +664,7 @@ function readMats(){
   return out;
 }
 function calcVenta(){
-  const total=n($('vTotal').value), tasa=n($('vTasa').value);
+  const total=n($('vTotal').value), tasa=tasaOHoy($('vTasa').value);
   const mats=readMats();
   const costoMat=mats.reduce((s,m)=>s+m.subtotal,0);
   const ganancia=total-costoMat;
@@ -634,10 +673,11 @@ function calcVenta(){
     <div class="line"><span>Total venta</span><b>${fUSD(total)}</b></div>
     <div class="line"><span>− Costo material (${mats.length})</span><span class="neg">${fUSD(costoMat)}</span></div>
     <div class="line"><span>Ganancia neta</span><b class="${ganancia>=0?'pos':'neg'}">${fUSD(ganancia)}</b></div>
-    <div class="line muted"><span>En bolívares (tasa ${tasa||0})</span><span>${fBs(total*tasa)} venta · ${fBs(ganancia*tasa)} ganancia</span></div>
+    <div class="line muted"><span>En bolívares (tasa ${fNum(tasa)})</span><span>${fBs(total*tasa)} venta · ${fBs(ganancia*tasa)} ganancia</span></div>
     ${avisoPosibleBs(total,tasa)}
-    <div style="margin-top:8px">
-      ${SOCIOS.map(s=>`<div class="socio"><span class="swatch" style="background:${SOC_COLOR[s]}"></span><span class="nm">${SOC_LABEL[s]}</span><span class="pc">${db.socios[s]}%</span><span class="am">${fUSD(rep[s])}</span></div>`).join('')}
+    <div class="muted" style="font-size:11px;margin-top:8px">Reparto en bolívares, fijado a la tasa de hoy de esta venta:</div>
+    <div>
+      ${SOCIOS.map(s=>`<div class="socio"><span class="swatch" style="background:${SOC_COLOR[s]}"></span><span class="nm">${SOC_LABEL[s]}</span><span class="pc">${db.socios[s]}%</span><span class="am">${fBs(rep[s]*tasa)}<small>${fUSD(rep[s])}</small></span></div>`).join('')}
     </div>`;
 }
 function reparto(g){
@@ -645,8 +685,9 @@ function reparto(g){
 }
 function toggleAbonoInicial(){$('vAbonoWrap').classList.toggle('hidden',$('vCobradoCompleto').checked);}
 function saveVenta(){
-  const total=n($('vTotal').value), tasa=n($('vTasa').value);
+  const total=n($('vTotal').value), tasa=tasaOHoy($('vTasa').value);
   if(total<=0)return toast('Poné el total de venta',true);
+  if(tasa<=0)return toast('Falta la tasa del día (Bs/$)',true);
   if(!confirmarSiPareceBs(total,tasa))return;
   const mats=readMats();
   // verificar stock
@@ -657,7 +698,7 @@ function saveVenta(){
   mats.forEach(m=>{const p=prodById(m.prodId);if(p)p.stock=Math.max(0,p.stock-m.cant);});
   const ts=nowTs();
   const cobradoCompleto=$('vCobradoCompleto').checked;
-  const cobros=cobradoCompleto?[{id:uid(),ts,monto:total}]:(()=>{const ab=Math.max(0,Math.min(n($('vAbonoInicial').value),total));return ab>0?[{id:uid(),ts,monto:ab}]:[];})();
+  const cobros=cobradoCompleto?[{id:uid(),ts,monto:total,tasa}]:(()=>{const ab=Math.max(0,Math.min(n($('vAbonoInicial').value),total));return ab>0?[{id:uid(),ts,monto:ab,tasa}]:[];})();
   db.ventas.push({
     id:uid(),ts,fecha:today(),desc:$('vDesc').value.trim()||'Venta',
     total,tasa,totalBs:total*tasa,mats,costoMat,ganancia,gananciaBs:ganancia*tasa,reparto:reparto(ganancia),
@@ -687,9 +728,13 @@ function registrarAbono(id){
   const monto=n(val);
   if(monto<=0)return toast('El monto debe ser mayor a 0',true);
   if(monto>pend+0.005&&!confirm('Eso es más de lo pendiente ('+fUSD(pend)+'). ¿Registrar igual?'))return;
+  const tv=prompt('¿A qué tasa Bs/$ pagó el cliente HOY? (la de este pago, no la de la venta)',tasaHoy().toFixed(2));
+  if(tv===null)return;
+  const tasa=n(tv);
+  if(tasa<=0)return toast('La tasa debe ser mayor a 0',true);
   if(!v.cobros)v.cobros=[];
-  v.cobros.push({id:uid(),ts:nowTs(),monto});
-  save();toast('Abono de '+fUSD(monto)+' registrado');render();
+  v.cobros.push({id:uid(),ts:nowTs(),monto,tasa});
+  save();toast('Abono de '+fUSD(monto)+' ('+fBs(monto*tasa)+') registrado');render();
 }
 function delCobro(ventaId,cobroId){
   const v=db.ventas.find(x=>x.id===ventaId);if(!v||!v.cobros)return;
@@ -703,11 +748,19 @@ function toggleVentaExpand(id){
   render();
 }
 function ventaEstadoHTML(v){
-  const pc=pendienteCobroDeVenta(v), ent=entregadoDeVenta(v);
+  const pc=pendienteCobroDeVenta(v), ent=entregadoDeVenta(v), tv=tasaVenta(v);
   const cobrosHtml=(v.cobros&&v.cobros.length)?v.cobros.map(c=>`<div class="muted" style="font-size:11px;display:flex;justify-content:space-between;gap:8px">
-      <span>Abono ${fmtFechaHora(c.ts)} · ${fUSD(c.monto)}</span>
+      <span>Abono ${fmtFechaHora(c.ts)} · ${fUSD(c.monto)} · ${fBs(n(c.monto)*tasaCobro(v,c))} (tasa ${fNum(tasaCobro(v,c))})</span>
       <a href="#" onclick="delCobro('${v.id}','${c.id}');return false" style="color:var(--red);text-decoration:none">anular</a></div>`).join('')
     :'<div class="muted" style="font-size:11px">Sin abonos registrados (se considera cobrada completa desde la venta)</div>';
+  // Lo que le toca a cada socio de ESTA venta, en bolívares, a la tasa del día en que se hizo
+  // Se muestra lo ya liberado según lo cobrado (cada abono a la tasa de SU día), igual que el pendiente de cada socio
+  const repHtml=SOCIOS.map(s=>{
+    const u=n(v.reparto?.[s]), pct=n(v.ganancia)>0?u/n(v.ganancia)*100:n(db.socios[s]);
+    const usdLib=n(v.total)>0?u*cobradoDeVenta(v)/n(v.total):0;
+    const bsLib=n(v.total)>0?cobrosDeVenta(v).reduce((b,c)=>b+u*(n(c.monto)/n(v.total))*tasaCobro(v,c),0):0;
+    return `<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:2px 0"><span><span class="swatch" style="display:inline-block;background:${SOC_COLOR[s]};margin-right:6px"></span>${SOC_LABEL[s]} <span class="muted">${fNum(pct)}%</span></span><span><b>${fBs(bsLib)}</b> <span class="muted">(${fUSD(usdLib)})${pc>0.005?' · de '+fBs(u*tv)+' en total':''}</span></span></div>`;
+  }).join('');
   return `<div style="background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px">
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">
       <span class="tag ${ent?'in':'out'}">${ent?'Entregado':'Por entregar'}</span>
@@ -718,22 +771,27 @@ function ventaEstadoHTML(v){
       ${pc>0.005?`<button class="btn sec sm" onclick="registrarAbono('${v.id}')">💰 Registrar abono</button>`:''}
     </div>
     ${cobrosHtml}
+    <div style="margin-top:8px;border-top:1px solid var(--line);padding-top:6px">
+      <div class="muted" style="font-size:11px;margin-bottom:3px">Reparto de esta venta en bolívares · venta a tasa ${fNum(tv)} Bs/$${pc>0.005?' · se libera según lo cobrado':''}</div>
+      ${repHtml}
+    </div>
   </div>`;
 }
 
 /* ================= EGRESOS ================= */
 function saveEgreso(){
   const concepto=$('eConcepto').value.trim();
-  const monto=n($('eMonto').value), tasa=n($('eTasa').value);
+  const monto=n($('eMonto').value), tasa=tasaOHoy($('eTasa').value);
   if(!concepto)return toast('Poné un concepto',true);
   if(monto<=0)return toast('Monto debe ser mayor a 0',true);
+  if(tasa<=0)return toast('Falta la tasa del día (Bs/$)',true);
   if(!confirmarSiPareceBs(monto,tasa))return;
   db.egresos.push({id:uid(),ts:nowTs(),fecha:today(),concepto,cat:$('eCat').value,monto,tasa,montoBs:monto*tasa});
   save();$('eConcepto').value='';$('eMonto').value='';updateEgresoCalc();toast('Egreso guardado');render();
 }
 function delEgreso(id){if(!confirm('¿Borrar egreso?'))return;db.egresos=db.egresos.filter(e=>e.id!==id);save();render();}
 function updateEgresoCalc(){
-  const monto=n($('eMonto').value), tasa=n($('eTasa').value);
+  const monto=n($('eMonto').value), tasa=tasaOHoy($('eTasa').value);
   $('eCalc').innerHTML=`<div class="line"><span>En bolívares</span><b>${fBs(monto*tasa)}</b></div>${avisoPosibleBs(monto,tasa)}`;
 }
 
@@ -747,7 +805,7 @@ function saveMerma(){
   if(cant>p.stock&&!confirm(`Stock insuficiente de "${p.nombre}" (hay ${fNum(p.stock)}, marcás ${fNum(cant)} dañadas). ¿Guardar igual?`))return;
   const valor=cant*p.costo;
   p.stock=Math.max(0,p.stock-cant);
-  db.mermas.push({id:uid(),ts:nowTs(),fecha:today(),prodId,prodNombre:p.nombre,cant,costoUnit:p.costo,valor,nota:$('mNota').value.trim()});
+  db.mermas.push({id:uid(),ts:nowTs(),fecha:today(),prodId,prodNombre:p.nombre,cant,costoUnit:p.costo,valor,tasa:tasaHoy(),valorBs:valor*tasaHoy(),nota:$('mNota').value.trim()});
   save();
   $('mCant').value='';$('mNota').value='';
   toast('Daño registrado · stock descontado');render();
@@ -766,20 +824,22 @@ function saveSocios(){
 }
 
 /* ================= PAGOS A SOCIOS ================= */
+// Se paga lo que se le debe EN BOLÍVARES (fijado a la tasa del día de cada venta); el pago guarda esos Bs y su equivalente en dólares.
 function pagarSocio(s){
-  const pend=totales().pendiente[s];
-  if(pend<=0.005)return toast('No hay monto pendiente para '+SOC_LABEL[s],true);
-  if(!confirm('¿Registrar el pago de '+fUSD(pend)+' a '+SOC_LABEL[s]+'?\nSu pendiente queda en $0 y se descuenta del saldo del banco.'))return;
-  db.pagos.push({id:uid(),ts:nowTs(),fecha:today(),socio:s,monto:pend});
-  save();toast('Pagado a '+SOC_LABEL[s]+' · pendiente en $0');render();
+  const t=totales(), pend=t.pendiente[s], pendBs=t.pendienteBs[s];
+  if(pend<=0.005||pendBs<=0.005)return toast('No hay monto pendiente para '+SOC_LABEL[s],true);
+  if(!confirm('¿Registrar el pago de '+fBs(pendBs)+' ('+fUSD(pend)+') a '+SOC_LABEL[s]+'?\nSu pendiente queda en cero y se descuenta del saldo del banco.'))return;
+  db.pagos.push({id:uid(),ts:nowTs(),fecha:today(),socio:s,monto:pend,montoBs:pendBs});
+  save();toast('Pagado a '+SOC_LABEL[s]+' · '+fBs(pendBs));render();
 }
 function pagarTodos(){
   const t=totales();
+  const totalBs=SOCIOS.reduce((a,s)=>a+Math.max(0,t.pendienteBs[s]),0);
   const total=SOCIOS.reduce((a,s)=>a+Math.max(0,t.pendiente[s]),0);
-  if(total<=0.005)return toast('No hay montos pendientes',true);
-  if(!confirm('¿Registrar el pago de TODO lo pendiente ('+fUSD(total)+') a los socios y la empresa?\nTodos quedan en $0 y se descuenta del saldo.'))return;
-  SOCIOS.forEach(s=>{const p=t.pendiente[s];if(p>0.005)db.pagos.push({id:uid(),ts:nowTs(),fecha:today(),socio:s,monto:p});});
-  save();toast('Pagos registrados · todos en $0');render();
+  if(total<=0.005||totalBs<=0.005)return toast('No hay montos pendientes',true);
+  if(!confirm('¿Registrar el pago de TODO lo pendiente ('+fBs(totalBs)+' · '+fUSD(total)+') a los socios y la empresa?\nTodos quedan en cero y se descuenta del saldo del banco.'))return;
+  SOCIOS.forEach(s=>{const p=t.pendiente[s],pb=t.pendienteBs[s];if(p>0.005&&pb>0.005)db.pagos.push({id:uid(),ts:nowTs(),fecha:today(),socio:s,monto:p,montoBs:pb});});
+  save();toast('Pagos registrados · todos en cero');render();
 }
 function delPago(id){
   if(!confirm('¿Anular este pago? El monto vuelve a quedar pendiente y al saldo.'))return;
@@ -814,29 +874,73 @@ function totales(){
   const saldoUSD=n(db.saldoInicial)+cobradoUSD-egresosUSD-inversionUSD-totalPagos;
   const entregasPendientes=db.ventas.filter(v=>!entregadoDeVenta(v)).length;
   const cobrosPendientes=db.ventas.filter(v=>pendienteCobroDeVenta(v)>0.005).length;
-  return {ventasUSD,cobradoUSD,porCobrarUSD,materialUSD,gananciaUSD,mermaUSD,inversionUSD,egresosUSD,stockVal,netoUSD,saldoUSD,repAcum,pagado,pendiente,totalPagos,entregasPendientes,cobrosPendientes};
+
+  // ===== MISMO CÁLCULO EN BOLÍVARES, sumando los Bs reales de cada transacción (cada una a la tasa de su día) =====
+  const hoy=tasaHoy();
+  const ventasBs=db.ventas.reduce((s,v)=>s+bsVenta(v),0);
+  const cobradoBs=db.ventas.reduce((s,v)=>s+bsCobradoVenta(v),0); // Bs que de verdad entraron al banco
+  const porCobrarBs=porCobrarUSD*hoy; // estimado: se cobrará a la tasa del día en que el cliente pague
+  const gananciaBs=db.ventas.reduce((s,v)=>s+bsGananciaVenta(v),0);
+  const materialBs=ventasBs-gananciaBs;
+  const mermaBs=db.mermas.reduce((s,m)=>s+bsMerma(m),0);
+  const inversionBs=db.compras.reduce((s,c)=>s+bsCompra(c),0);
+  const egresosBs=db.egresos.reduce((s,e)=>s+bsEgreso(e),0);
+  const stockValBs=stockVal*hoy; // el inventario sí se valora a la tasa de hoy (es lo que costaría reponerlo)
+  const netoBs=gananciaBs-egresosBs-mermaBs;
+  // Reparto a socios en Bs: la parte de cada socio de lo cobrado, a la tasa del día en que se cobró (por eso nunca falta plata al pagar)
+  const repAcumBs={},pagadoBs={},pendienteBs={},tasaPromSocio={};
+  SOCIOS.forEach(s=>{
+    repAcumBs[s]=db.ventas.reduce((a,v)=>{
+      if(!(n(v.total)>0))return a;
+      const r=n(v.reparto?.[s]);
+      return a+cobrosDeVenta(v).reduce((b,c)=>b+r*(n(c.monto)/v.total)*tasaCobro(v,c),0);
+    },0);
+    tasaPromSocio[s]=repAcum[s]>0?repAcumBs[s]/repAcum[s]:hoy; // solo para pagos viejos que no guardaron Bs
+    pagadoBs[s]=db.pagos.filter(p=>p.socio===s).reduce((a,p)=>a+(p.montoBs!==undefined?n(p.montoBs):n(p.monto)*tasaPromSocio[s]),0);
+    pendienteBs[s]=repAcumBs[s]-pagadoBs[s];
+  });
+  const totalPagosBs=SOCIOS.reduce((a,s)=>a+pagadoBs[s],0);
+  // Saldo inicial en Bs: el que escribió el usuario; si nunca lo escribió, se deriva del saldo inicial en dólares
+  const saldoIniBs=(db.saldoInicialBs!==undefined&&db.saldoInicialBs!==null&&db.saldoInicialBs!=='')?n(db.saldoInicialBs):n(db.saldoInicial)*hoy;
+  const saldoBs=saldoIniBs+cobradoBs-egresosBs-inversionBs-totalPagosBs; // ESTE es el que debe coincidir con el banco
+  // Material (en inventario + usado en ventas + dañado) que no tiene ninguna compra registrada: dinero que salió del banco sin quedar anotado
+  const materialSinCompraUSD=Math.max(0,stockVal+materialUSD+mermaUSD-inversionUSD);
+  return {ventasUSD,cobradoUSD,porCobrarUSD,materialUSD,gananciaUSD,mermaUSD,inversionUSD,egresosUSD,stockVal,netoUSD,saldoUSD,repAcum,pagado,pendiente,totalPagos,entregasPendientes,cobrosPendientes,
+    ventasBs,cobradoBs,porCobrarBs,gananciaBs,materialBs,mermaBs,inversionBs,egresosBs,stockValBs,netoBs,repAcumBs,pagadoBs,pendienteBs,tasaPromSocio,totalPagosBs,saldoIniBs,saldoBs,materialSinCompraUSD};
 }
+function bsPago(p,t){return p.montoBs!==undefined?n(p.montoBs):n(p.monto)*(t.tasaPromSocio[p.socio]||tasaHoy());}
 function render(){
-  const t=totales(), tasa=n(db.tasaRef);
+  const t=totales();
   // DASHBOARD
-  $('tasaRef').value=db.tasaRef||'';
-  $('saldoIni').value=db.saldoInicial||'';
+  // Los campos no se pisan mientras se está escribiendo en ellos (antes se perdía el punto decimal al teclear).
+  const setSiNoEnfocado=(id,val)=>{const el=$(id);if(el&&document.activeElement!==el)el.value=val;};
+  setSiNoEnfocado('tasaRef',db.tasaRef||'');
+  setSiNoEnfocado('saldoIni',db.saldoInicial||'');
+  setSiNoEnfocado('saldoIniBs',(db.saldoInicialBs===undefined||db.saldoInicialBs===null)?'':db.saldoInicialBs);
+  setSiNoEnfocado('bancoReal',(db.bancoRealBs===undefined||db.bancoRealBs===null)?'':db.bancoRealBs);
   if(!$('calcTasa').value&&db.tasaRef)$('calcTasa').value=n(db.tasaRef).toFixed(2);
-  calcPresupuesto();
-  $('dashCards').innerHTML=[
-    [t.saldoUSD>=0?'green':'red','💵 Saldo en banco/caja',fUSD(t.saldoUSD),tasa?fBs(t.saldoUSD*tasa):'',true],
-    ['blue','Ventas totales (facturado)',fUSD(t.ventasUSD),tasa?fBs(t.ventasUSD*tasa):''],
-    ['green','Cobrado de clientes',fUSD(t.cobradoUSD),tasa?fBs(t.cobradoUSD*tasa):''],
-    ['yellow','Por cobrar (clientes)',fUSD(t.porCobrarUSD),tasa?fBs(t.porCobrarUSD*tasa):''],
-    ['red','Egresos / gastos (salen)',fUSD(t.egresosUSD),tasa?fBs(t.egresosUSD*tasa):''],
-    ['red','Compras / inversión (salen)',fUSD(t.inversionUSD),tasa?fBs(t.inversionUSD*tasa):''],
-    ['red','Pagado a socios (salen)',fUSD(t.totalPagos),tasa?fBs(t.totalPagos*tasa):''],
-    ['red','Pérdida por daños',fUSD(t.mermaUSD),tasa?fBs(t.mermaUSD*tasa):''],
-    ['green','Ganancia del trabajo (vtas−mat.)',fUSD(t.gananciaUSD),tasa?fBs(t.gananciaUSD*tasa):''],
-    [t.netoUSD>=0?'green':'red','Ganancia real del negocio (−egresos−daños)',fUSD(t.netoUSD),tasa?fBs(t.netoUSD*tasa):''],
-    ['blue','Valor de inventario',fUSD(t.stockVal),tasa?fBs(t.stockVal*tasa):''],
-  ].map(c=>`<div class="card ${c[0]}">${c[4]?'<div class="lbl" style="color:var(--brand2)">DEBE COINCIDIR CON TU BANCO</div>':''}<div class="lbl">${c[1]}</div><div class="val${c[4]?'':' sm'}">${c[2]}</div><div class="bs">${c[3]||''}</div></div>`).join('');
-  $('dashSocios').innerHTML='<div class="sub muted" style="margin-bottom:6px">Pendiente por pagar (se reinicia al pagar)</div>'+SOCIOS.map(s=>`<div class="socio"><span class="swatch" style="background:${SOC_COLOR[s]}"></span><span class="nm">${SOC_LABEL[s]}</span><span class="pc">${db.socios[s]}%</span><span class="am ${t.pendiente[s]>0.005?'pos':'muted'}">${fUSD(t.pendiente[s])}</span></div>`).join('');
+  // La tasa de cada venta/compra/gasto arranca con la tasa del día (se puede cambiar); así ningún registro queda sin tasa.
+  ['vTasa','cTasa','eTasa'].forEach(id=>{const el=$(id);if(el&&!el.value&&document.activeElement!==el&&tasaHoy()>0)el.value=tasaHoy().toFixed(2);});
+  calcPresupuesto();calcVenta();
+  const tarjetas=[
+    {c:t.saldoBs>=0?'green':'red',l:'💵 Saldo en banco/caja',v:fBs(t.saldoBs),b:'≈ '+fUSD(t.saldoUSD),key:true,
+      h:'= saldo inicial + cobrado − egresos − compras − pagos a socios. Cada monto en Bs, a la tasa del día en que se registró.'},
+    {c:'blue',l:'Ventas totales (facturado)',v:fUSD(t.ventasUSD),b:fBs(t.ventasBs)},
+    {c:'green',l:'Cobrado de clientes',v:fUSD(t.cobradoUSD),b:fBs(t.cobradoBs)},
+    {c:'yellow',l:'Por cobrar (clientes)',v:fUSD(t.porCobrarUSD),b:'≈ '+fBs(t.porCobrarBs)},
+    {c:'red',l:'Egresos / gastos (salen)',v:fUSD(t.egresosUSD),b:fBs(t.egresosBs)},
+    {c:'red',l:'Compras / inversión (salen)',v:fUSD(t.inversionUSD),b:fBs(t.inversionBs),
+      h:t.materialSinCompraUSD>0.1?'⚠️ Hay '+fUSD(t.materialSinCompraUSD)+' de material sin compra registrada (ver "Cuadre con tu banco").':''},
+    {c:'red',l:'Pagado a socios (salen)',v:fUSD(t.totalPagos),b:fBs(t.totalPagosBs)},
+    {c:'red',l:'Pérdida por daños',v:fUSD(t.mermaUSD),b:fBs(t.mermaBs)},
+    {c:'green',l:'Ganancia del trabajo (vtas−mat.)',v:fUSD(t.gananciaUSD),b:fBs(t.gananciaBs)},
+    {c:t.netoUSD>=0?'green':'red',l:'Ganancia real del negocio',v:fUSD(t.netoUSD),b:fBs(t.netoBs),
+      h:'= ventas − material usado − egresos − daños (desglose abajo)'},
+    {c:'blue',l:'Valor de inventario',v:fUSD(t.stockVal),b:'≈ '+fBs(t.stockValBs)+' a la tasa de hoy'},
+  ];
+  $('dashCards').innerHTML=tarjetas.map(c=>`<div class="card ${c.c}">${c.key?'<div class="lbl" style="color:var(--brand2)">DEBE COINCIDIR CON TU BANCO</div>':''}<div class="lbl">${c.l}</div><div class="val${c.key?'':' sm'}">${c.v}</div><div class="bs">${c.b}</div>${c.h?`<div class="hint2">${c.h}</div>`:''}</div>`).join('');
+  renderCuadre(t);
+  $('dashSocios').innerHTML='<div class="sub muted" style="margin-bottom:6px">Pendiente por pagar en bolívares (cada venta a la tasa de su día) · se reinicia al pagar</div>'+SOCIOS.map(s=>`<div class="socio"><span class="swatch" style="background:${SOC_COLOR[s]}"></span><span class="nm">${SOC_LABEL[s]}</span><span class="pc">${db.socios[s]}%</span><span class="am ${t.pendienteBs[s]>0.005?'pos':'muted'}">${fBs(t.pendienteBs[s])}<small>≈ ${fUSD(t.pendiente[s])}</small></span></div>`).join('');
   // dash inventario
   if(!db.productos.length){$('dashInv').innerHTML='<div class="empty">Sin productos cargados</div>';}
   else{
@@ -848,12 +952,12 @@ function render(){
   // dash movimientos (cada cobro real, no el total facturado por adelantado)
   const movs=[
     ...db.ventas.flatMap(v=>{
-      const cobros=(v.cobros&&v.cobros.length)?v.cobros:[{ts:v.ts,monto:v.total}]; // ventas viejas sin cobros = un solo evento por el total
-      return cobros.map(c=>({ts:c.ts,fecha:v.fecha,tipo:'in',det:v.desc+(cobros.length>1?' (abono)':''),usd:c.monto,bs:c.monto*(v.tasa||0)}));
+      const cobros=(v.cobros&&v.cobros.length)?v.cobros:(v.cobros?[]:cobrosDeVenta(v)); // ventas viejas sin cobros = un solo evento por el total
+      return cobros.map(c=>({ts:c.ts,fecha:v.fecha,tipo:'in',det:v.desc+(cobros.length>1?' (abono)':''),usd:c.monto,bs:n(c.monto)*tasaCobro(v,c)}));
     }),
-    ...db.egresos.map(e=>({ts:e.ts,fecha:e.fecha,tipo:'out',det:e.concepto,usd:-e.monto,bs:-e.montoBs})),
-    ...db.compras.map(c=>({ts:c.ts,fecha:c.fecha,tipo:'inv',det:'Compra '+c.prodNombre,usd:-c.total,bs:-c.totalBs})),
-    ...db.pagos.map(p=>({ts:p.ts,fecha:p.fecha,tipo:'pay',det:'Pago a '+SOC_LABEL[p.socio],usd:-p.monto,bs:-p.monto*n(db.tasaRef)})),
+    ...db.egresos.map(e=>({ts:e.ts,fecha:e.fecha,tipo:'out',det:e.concepto,usd:-e.monto,bs:-bsEgreso(e)})),
+    ...db.compras.map(c=>({ts:c.ts,fecha:c.fecha,tipo:'inv',det:'Compra '+c.prodNombre,usd:-c.total,bs:-bsCompra(c)})),
+    ...db.pagos.map(p=>({ts:p.ts,fecha:p.fecha,tipo:'pay',det:'Pago a '+SOC_LABEL[p.socio],usd:-p.monto,bs:-bsPago(p,t)})),
   ].sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,12);
   $('dashMov').innerHTML=movs.length?movs.map(m=>{
     const tg=m.tipo==='in'?'<span class="tag in">Venta</span>':m.tipo==='out'?'<span class="tag out">Egreso</span>':m.tipo==='pay'?'<span class="tag out">Pago socio</span>':'<span class="tag inv">Compra</span>';
@@ -873,7 +977,7 @@ function render(){
   $('cProd').innerHTML=db.productos.map(p=>`<option value="${p.id}">${p.nombre}</option>`).join('')||'<option value="">— creá un producto —</option>';
   updateCompraCalc();
   $('comprasTbl').innerHTML=db.compras.length?[...db.compras].reverse().map(c=>
-    `<tr><td>${fmtFechaHora(c.ts,c.fecha)}</td><td>${c.prodNombre}</td><td><span class="tag ${c.tipo==='inversion'?'inv':'out'}">${c.tipo}</span></td><td class="r">${fNum(c.cant)}</td><td class="r">${fUSD(c.total)}<div class="muted" style="font-size:11px">${fBs(c.totalBs)}</div></td><td class="r"><button class="btn sec sm" onclick="delCompra('${c.id}')">✕</button></td></tr>`
+    `<tr><td>${fmtFechaHora(c.ts,c.fecha)}</td><td>${c.prodNombre}${c.soloGasto?'<div class="muted" style="font-size:11px">solo gasto · el stock ya estaba cargado</div>':''}</td><td><span class="tag ${c.tipo==='inversion'?'inv':'out'}">${c.tipo}</span></td><td class="r">${fNum(c.cant)}</td><td class="r">${fUSD(c.total)}<div class="muted" style="font-size:11px">${fBs(bsCompra(c))} · tasa ${fNum(tasaOHoy(c.tasa))}</div></td><td class="r"><button class="btn sec sm" onclick="delCompra('${c.id}')">✕</button></td></tr>`
   ).join(''):'<tr><td colspan="6" class="empty">Sin compras registradas</td></tr>';
 
   // VENTAS
@@ -881,24 +985,24 @@ function render(){
     const pc=pendienteCobroDeVenta(v), ent=entregadoDeVenta(v);
     const estado=(!ent||pc>0.005)?`<div style="margin-top:3px">${!ent?'<span class="tag out" style="margin-right:4px">Por entregar</span>':''}${pc>0.005?`<span class="tag out">Debe ${fUSD(pc)}</span>`:''}</div>`:'';
     const expandido=ventasExpandidas.has(v.id);
-    return `<tr><td>${fmtFechaHora(v.ts,v.fecha)}</td><td>${v.desc}<div class="muted" style="font-size:11px">${v.mats.map(m=>m.nombre+'×'+fNum(m.cant)).join(', ')||'sin material'}</div>${estado}
-      <a href="#" onclick="toggleVentaExpand('${v.id}');return false" style="font-size:11px;text-decoration:none;display:inline-block;margin-top:4px">${expandido?'▲ ocultar':'⚙️ cobro y entrega'}</a>
+    return `<tr><td>${fmtFechaHora(v.ts,v.fecha)}<div class="muted" style="font-size:11px">tasa ${fNum(tasaVenta(v))}</div></td><td>${v.desc}<div class="muted" style="font-size:11px">${v.mats.map(m=>m.nombre+'×'+fNum(m.cant)).join(', ')||'sin material'}</div>${estado}
+      <a href="#" onclick="toggleVentaExpand('${v.id}');return false" style="font-size:11px;text-decoration:none;display:inline-block;margin-top:4px">${expandido?'▲ ocultar':'⚙️ cobro, entrega y reparto'}</a>
       ${expandido?ventaEstadoHTML(v):''}</td>
-      <td class="r">${fUSD(v.total)}</td><td class="r neg">${fUSD(v.costoMat)}</td>
-      <td class="r ${v.ganancia>=0?'pos':'neg'}"><b>${fUSD(v.ganancia)}</b></td>
+      <td class="r">${fUSD(v.total)}<div class="muted" style="font-size:11px">${fBs(bsVenta(v))}</div></td><td class="r neg">${fUSD(v.costoMat)}</td>
+      <td class="r ${v.ganancia>=0?'pos':'neg'}"><b>${fUSD(v.ganancia)}</b><div class="muted" style="font-size:11px">${fBs(bsGananciaVenta(v))}</div></td>
       <td class="r"><button class="btn sec sm" onclick="delVenta('${v.id}')">✕</button></td></tr>`;
   }).join(''):'<tr><td colspan="6" class="empty">Sin ventas registradas</td></tr>';
 
   // EGRESOS
   updateEgresoCalc();
   $('egresosTbl').innerHTML=db.egresos.length?[...db.egresos].reverse().map(e=>
-    `<tr><td>${fmtFechaHora(e.ts,e.fecha)}</td><td>${e.concepto}</td><td><span class="muted">${e.cat}</span></td><td class="r neg">${fUSD(e.monto)}</td><td class="r muted">${fBs(e.montoBs)}</td><td class="r"><button class="btn sec sm" onclick="delEgreso('${e.id}')">✕</button></td></tr>`
+    `<tr><td>${fmtFechaHora(e.ts,e.fecha)}</td><td>${e.concepto}</td><td><span class="muted">${e.cat}</span></td><td class="r neg">${fUSD(e.monto)}</td><td class="r muted">${fBs(bsEgreso(e))}<div style="font-size:11px">tasa ${fNum(tasaOHoy(e.tasa))}</div></td><td class="r"><button class="btn sec sm" onclick="delEgreso('${e.id}')">✕</button></td></tr>`
   ).join(''):'<tr><td colspan="6" class="empty">Sin egresos registrados</td></tr>';
 
   // MERMAS
   $('mProd').innerHTML=db.productos.map(p=>`<option value="${p.id}">${p.nombre} (stock ${fNum(p.stock)})</option>`).join('')||'<option value="">— creá un producto —</option>';
   $('mermasTbl').innerHTML=db.mermas.length?[...db.mermas].reverse().map(m=>
-    `<tr><td>${fmtFechaHora(m.ts,m.fecha)}</td><td>${m.prodNombre}${m.nota?`<div class="muted" style="font-size:11px">${m.nota}</div>`:''}</td><td class="r">${fNum(m.cant)}</td><td class="r neg">${fUSD(m.valor)}</td><td class="r"><button class="btn sec sm" onclick="delMerma('${m.id}')">✕</button></td></tr>`
+    `<tr><td>${fmtFechaHora(m.ts,m.fecha)}</td><td>${m.prodNombre}${m.nota?`<div class="muted" style="font-size:11px">${m.nota}</div>`:''}</td><td class="r">${fNum(m.cant)}</td><td class="r neg">${fUSD(m.valor)}<div class="muted" style="font-size:11px">${fBs(bsMerma(m))}</div></td><td class="r"><button class="btn sec sm" onclick="delMerma('${m.id}')">✕</button></td></tr>`
   ).join(''):'<tr><td colspan="5" class="empty">Sin daños registrados</td></tr>';
 
   // PENDIENTES
@@ -909,39 +1013,40 @@ function render(){
   const sum=SOCIOS.reduce((s,k)=>s+n(db.socios[k]),0);
   $('sumPct').innerHTML=`Suma actual: <b class="${Math.abs(sum-100)<.01?'pos':'neg'}">${sum}%</b>`;
   const pendTotal=SOCIOS.reduce((a,s)=>a+Math.max(0,t.pendiente[s]),0);
+  const pendTotalBs=SOCIOS.reduce((a,s)=>a+Math.max(0,t.pendienteBs[s]),0);
   $('sociosFull').innerHTML=
-    `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-       <div class="muted">Total pendiente por pagar: <b class="${pendTotal>0.005?'pos':''}">${fUSD(pendTotal)}</b></div>
+    `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px;flex-wrap:wrap">
+       <div class="muted">Total pendiente por pagar: <b class="${pendTotalBs>0.005?'pos':''}">${fBs(pendTotalBs)}</b> <span class="muted">(≈ ${fUSD(pendTotal)})</span></div>
        <button class="btn sm" onclick="pagarTodos()">✅ Pagar a todos</button>
      </div>`+
     SOCIOS.map(s=>{
-      const pend=t.pendiente[s];
+      const pend=t.pendiente[s], pendBs=t.pendienteBs[s];
       return `<div style="margin-bottom:14px">
         <div class="socio" style="border:0;padding:4px 0">
           <span class="swatch" style="background:${SOC_COLOR[s]}"></span>
           <span class="nm"><b>${SOC_LABEL[s]}</b> <span class="muted">${db.socios[s]}%</span></span>
-          <span class="am ${pend>0.005?'pos':'muted'}">${fUSD(pend)}</span>
+          <span class="am ${pendBs>0.005?'pos':'muted'}">${fBs(pendBs)}<small>≈ ${fUSD(pend)}</small></span>
           <button class="btn sec sm" style="margin-left:8px" onclick="pagarSocio('${s}')">Pagar</button>
         </div>
-        <div class="muted" style="font-size:11px;padding-left:22px">Histórico ${fUSD(t.repAcum[s])} · Pagado ${fUSD(t.pagado[s])}</div>
+        <div class="muted" style="font-size:11px;padding-left:22px">Histórico ${fBs(t.repAcumBs[s])} (${fUSD(t.repAcum[s])}) · Pagado ${fBs(t.pagadoBs[s])} (${fUSD(t.pagado[s])})</div>
       </div>`;
     }).join('')+
     (db.pagos.length?`<h3 style="margin-top:18px">🧾 Historial de pagos</h3>
-      <table><thead><tr><th>Fecha</th><th>Socio</th><th class="r">Monto $</th><th></th></tr></thead><tbody>`+
-      [...db.pagos].reverse().map(p=>`<tr><td>${fmtFechaHora(p.ts,p.fecha)}</td><td>${SOC_LABEL[p.socio]}</td><td class="r neg">${fUSD(p.monto)}</td><td class="r"><button class="btn sec sm" onclick="delPago('${p.id}')">✕</button></td></tr>`).join('')+
+      <table><thead><tr><th>Fecha</th><th>Socio</th><th class="r">Monto Bs</th><th class="r">Monto $</th><th></th></tr></thead><tbody>`+
+      [...db.pagos].reverse().map(p=>`<tr><td>${fmtFechaHora(p.ts,p.fecha)}</td><td>${SOC_LABEL[p.socio]}</td><td class="r neg">${fBs(bsPago(p,t))}</td><td class="r muted">${fUSD(p.monto)}</td><td class="r"><button class="btn sec sm" onclick="delPago('${p.id}')">✕</button></td></tr>`).join('')+
       `</tbody></table>`:'');
 }
 function renderPendientes(t){
   $('pendCards').innerHTML=[
-    ['yellow','💰 Por cobrar',fUSD(t.porCobrarUSD)],
+    ['yellow','💰 Por cobrar',fUSD(t.porCobrarUSD),'≈ '+fBs(t.porCobrarBs)+' a la tasa de hoy'],
     ['blue','📦 Ventas sin entregar',String(t.entregasPendientes)],
     ['blue','🧾 Ventas con cobro pendiente',String(t.cobrosPendientes)],
-  ].map(c=>`<div class="card ${c[0]}"><div class="lbl">${c[1]}</div><div class="val sm">${c[2]}</div></div>`).join('');
+  ].map(c=>`<div class="card ${c[0]}"><div class="lbl">${c[1]}</div><div class="val sm">${c[2]}</div>${c[3]?`<div class="bs">${c[3]}</div>`:''}</div>`).join('');
   const pend=db.ventas.filter(v=>!entregadoDeVenta(v)||pendienteCobroDeVenta(v)>0.005);
   $('pendList').innerHTML=pend.length?[...pend].reverse().map(v=>{
     const pc=pendienteCobroDeVenta(v), ent=entregadoDeVenta(v);
     const cobrosHtml=(v.cobros&&v.cobros.length)?v.cobros.map(c=>`<div class="muted" style="font-size:11px;display:flex;justify-content:space-between;gap:8px">
-        <span>Abono ${fmtFechaHora(c.ts)} · ${fUSD(c.monto)}</span>
+        <span>Abono ${fmtFechaHora(c.ts)} · ${fUSD(c.monto)} · ${fBs(n(c.monto)*tasaCobro(v,c))}</span>
         <a href="#" onclick="delCobro('${v.id}','${c.id}');return false" style="color:var(--red);text-decoration:none">anular</a></div>`).join(''):'';
     return `<div class="panel" style="margin-bottom:10px;padding:14px">
       <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
@@ -959,8 +1064,71 @@ function renderPendientes(t){
     </div>`;
   }).join(''):'<div class="empty">No hay ventas pendientes — todo cobrado y entregado 🎉</div>';
 }
+/* ================= CUADRE CON EL BANCO ================= */
+// Explica el saldo del banco y la ganancia real línea por línea (en bolívares reales y su equivalente en dólares)
+function renderCuadre(t){
+  const L=(signo,txt,bs,usd,extra)=>`<div class="line"><span>${signo} ${txt}</span><span><b>${fBs(bs)}</b> <span class="muted" style="font-size:11px">(${fUSD(usd)})</span></span></div>${extra||''}`;
+  const hintInv=t.materialSinCompraUSD>0.1
+    ?`<div style="color:var(--yellow);font-size:12px;padding:6px 0 4px">💡 Hay <b>${fUSD(t.materialSinCompraUSD)}</b> (≈ ${fBs(t.materialSinCompraUSD*tasaHoy())}) de material —en inventario, usado en ventas o dañado— que <b>no tiene ninguna compra registrada</b>. Si lo pagaste con el dinero de esta cuenta, ese dinero ya salió del banco pero la app no lo sabe. <button class="btn sec sm" style="margin-top:4px" onclick="registrarInversionInicial()">Registrar como inversión</button></div>`
+    :'';
+  $('cuadreOut').innerHTML=
+    L('','Saldo inicial',t.saldoIniBs,n(db.saldoInicial))+
+    L('+','Cobrado de clientes',t.cobradoBs,t.cobradoUSD)+
+    L('−','Egresos / gastos',t.egresosBs,t.egresosUSD)+
+    L('−','Compras / inversión',t.inversionBs,t.inversionUSD,hintInv)+
+    L('−','Pagado a socios',t.totalPagosBs,t.totalPagos)+
+    `<div class="line tot"><span>= Debería haber en tu banco</span><span class="${t.saldoBs>=0?'pos':'neg'}"><b>${fBs(t.saldoBs)}</b> <span class="muted" style="font-size:11px">(${fUSD(t.saldoUSD)})</span></span></div>`;
+  $('gananciaOut').innerHTML=
+    L('','Ventas (facturado)',t.ventasBs,t.ventasUSD)+
+    L('−','Material usado en esas ventas',t.materialBs,t.materialUSD)+
+    `<div class="line"><span>= Ganancia del trabajo</span><span class="pos"><b>${fBs(t.gananciaBs)}</b> <span class="muted" style="font-size:11px">(${fUSD(t.gananciaUSD)})</span></span></div>`+
+    L('−','Egresos / gastos',t.egresosBs,t.egresosUSD)+
+    L('−','Pérdida por daños',t.mermaBs,t.mermaUSD)+
+    `<div class="line tot"><span>= Ganancia real del negocio</span><span class="${t.netoBs>=0?'pos':'neg'}"><b>${fBs(t.netoBs)}</b> <span class="muted" style="font-size:11px">(${fUSD(t.netoUSD)})</span></span></div>`;
+  actualizarConciliacion(t);
+}
+function actualizarConciliacion(t){
+  t=t||totales();
+  const out=$('concOut');if(!out)return;
+  const real=db.bancoRealBs;
+  if(real===undefined||real===null||real===''){out.innerHTML='<div class="muted" style="font-size:12px;margin-top:6px">Escribe lo que muestra tu banco y te digo si coincide con la app.</div>';return;}
+  const dif=n(real)-t.saldoBs;
+  if(Math.abs(dif)<1){out.innerHTML='<div class="line pos" style="margin-top:8px"><b>✅ Coincide con tu banco</b></div>';return;}
+  out.innerHTML=`<div style="margin-top:8px;font-size:13px;color:${dif<0?'var(--red)':'var(--yellow)'}">${dif<0
+    ?`Tu banco tiene <b>${fBs(-dif)} MENOS</b> que la app: salió dinero que no está registrado (compras de material, gastos, retiros…).`
+    :`Tu banco tiene <b>${fBs(dif)} MÁS</b> que la app: entró dinero que no está registrado (ventas, abonos, saldo inicial…).`}</div>
+    <div class="muted" style="font-size:12px;margin-top:6px">Si ya registraste todo y aun así no coincide, tu saldo inicial debería ser ${fBs(t.saldoIniBs+dif)}. <button class="btn sec sm" onclick="ajustarSaldoInicial()">Aplicar</button></div>`;
+}
+function onBancoRealInput(){const v=$('bancoReal').value;db.bancoRealBs=v===''?undefined:n(v);actualizarConciliacion();}
+function onBancoRealChange(){save();}
+function ajustarSaldoInicial(){
+  const t=totales(), real=db.bancoRealBs;
+  if(real===undefined||real===null||real==='')return toast('Escribe primero cuánto tienes en tu banco',true);
+  const dif=n(real)-t.saldoBs;
+  if(Math.abs(dif)<1)return toast('Ya coincide con tu banco');
+  if(!confirm('Esto cambia tu saldo inicial de '+fBs(t.saldoIniBs)+' a '+fBs(t.saldoIniBs+dif)+' para que la app coincida con tu banco.\n\nHazlo solo si ya registraste TODAS las ventas, gastos y compras. ¿Continuar?'))return;
+  db.saldoInicialBs=t.saldoIniBs+dif;
+  db.saldoInicial=n(db.saldoInicial)+dif/(tasaHoy()||1);
+  save();toast('Saldo inicial ajustado · ahora coincide con tu banco');render();
+}
+// El material cargado como "stock inicial" no salió del banco en la app. Esto lo registra como una compra (solo el gasto, sin tocar el stock).
+function registrarInversionInicial(){
+  const t=totales(), sugerido=t.materialSinCompraUSD;
+  if(sugerido<=0.1)return toast('No hay material sin compra registrada',true);
+  const v1=prompt('Material sin compra registrada: '+fUSD(sugerido)+'\n¿Cuánto pagaste EN TOTAL por ese material? (USD)',sugerido.toFixed(2));
+  if(v1===null)return;
+  const total=n(v1);
+  if(total<=0)return toast('El monto debe ser mayor a 0',true);
+  const v2=prompt('¿A qué tasa Bs/$ lo pagaste? (si fue en varios días, pon un promedio)',tasaHoy().toFixed(2));
+  if(v2===null)return;
+  const tasa=n(v2);
+  if(tasa<=0)return toast('La tasa debe ser mayor a 0',true);
+  if(!confirm('Se van a restar '+fBs(total*tasa)+' ('+fUSD(total)+') del saldo de tu banco como inversión inicial.\n\n¿Confirmas?'))return;
+  db.compras.push({id:uid(),ts:nowTs(),fecha:today(),prodId:'',prodNombre:'Inversión inicial (material ya cargado)',tipo:'inversion',cant:0,total,tasa,totalBs:total*tasa,costoUnit:0,soloGasto:true});
+  save();toast('Inversión registrada · el saldo del banco bajó '+fBs(total*tasa));render();
+}
 function updateCompraCalc(){
-  const cant=n($('cCant').value),total=n($('cTotal').value),tasa=n($('cTasa').value);
+  const cant=n($('cCant').value),total=n($('cTotal').value),tasa=tasaOHoy($('cTasa').value);
   const cu=cant>0?total/cant:0;
   $('cCalc').innerHTML=`<div class="line"><span>Costo por unidad</span><b>${fUSD(cu)}</b></div><div class="line muted"><span>Total en Bs</span><span>${fBs(total*tasa)}</span></div>${avisoPosibleBs(total,tasa)}`;
 }
@@ -978,8 +1146,9 @@ function importJSON(ev){
   r.readAsText(f);ev.target.value='';
 }
 function exportCSV(){
-  let rows=[['Fecha y hora','Descripcion','Materiales','Venta USD','Tasa','Venta Bs','Costo material USD','Ganancia USD','Cobrado USD','Pendiente cobro USD','Entregado','Danny','Greis','Gihans','Empresa']];
-  db.ventas.forEach(v=>rows.push([fmtFechaHora(v.ts,v.fecha),v.desc,v.mats.map(m=>m.nombre+'x'+m.cant).join(' | '),v.total.toFixed(2),v.tasa,v.totalBs.toFixed(2),v.costoMat.toFixed(2),v.ganancia.toFixed(2),cobradoDeVenta(v).toFixed(2),pendienteCobroDeVenta(v).toFixed(2),entregadoDeVenta(v)?'Si':'No',v.reparto.danny.toFixed(2),v.reparto.greis.toFixed(2),v.reparto.gihans.toFixed(2),v.reparto.empresa.toFixed(2)]));
+  let rows=[['Fecha y hora','Descripcion','Materiales','Venta USD','Tasa','Venta Bs','Costo material USD','Ganancia USD','Cobrado USD','Pendiente cobro USD','Entregado','Danny USD','Greis USD','Gihans USD','Empresa USD','Danny Bs','Greis Bs','Gihans Bs','Empresa Bs']];
+  db.ventas.forEach(v=>rows.push([fmtFechaHora(v.ts,v.fecha),v.desc,v.mats.map(m=>m.nombre+'x'+m.cant).join(' | '),v.total.toFixed(2),tasaVenta(v),bsVenta(v).toFixed(2),v.costoMat.toFixed(2),v.ganancia.toFixed(2),cobradoDeVenta(v).toFixed(2),pendienteCobroDeVenta(v).toFixed(2),entregadoDeVenta(v)?'Si':'No',
+    ...SOCIOS.map(s=>n(v.reparto?.[s]).toFixed(2)),...SOCIOS.map(s=>(n(v.reparto?.[s])*tasaVenta(v)).toFixed(2))]));
   const csv=rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
   const blob=new Blob(['﻿'+csv],{type:'text/csv'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='Pakipis_ventas_'+today()+'.csv';a.click();toast('CSV exportado');
@@ -1083,6 +1252,9 @@ async function startApp(session){
 /* ================= INIT ================= */
 $('tasaRef').addEventListener('input',e=>{db.tasaRef=n(e.target.value);db.tasaRefAuto=false;save();render();});
 $('saldoIni').addEventListener('input',e=>{db.saldoInicial=n(e.target.value);save();render();});
+$('saldoIniBs').addEventListener('input',e=>{const v=e.target.value;db.saldoInicialBs=v===''?undefined:n(v);save();render();});
+$('bancoReal').addEventListener('input',onBancoRealInput);
+$('bancoReal').addEventListener('change',onBancoRealChange);
 ['cCant','cTotal','cTasa'].forEach(i=>$(i).addEventListener('input',updateCompraCalc));
 ['eMonto','eTasa'].forEach(i=>$(i).addEventListener('input',updateEgresoCalc));
 $('logPass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
