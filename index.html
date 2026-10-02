@@ -294,7 +294,7 @@
             <div><label>Costo por unidad (USD)</label><input type="number" step="0.0001" id="pCosto" placeholder="0.00"></div>
             <div><label>Alerta stock bajo</label><input type="number" step="1" id="pMin" placeholder="5"></div>
           </div>
-          <small class="hint">Tip: para sumar stock comprado usá la sección <b>Compras / Inversión</b> (recalcula el costo automáticamente). Para ajustes puntuales (nombre, cantidad, unidad, etc.) usá "✏️ editar" en la tabla de la derecha.<br>⚠️ El <b>stock inicial NO resta dinero del banco</b>. Si lo pagaste desde tu cuenta después de empezar a llevar las cuentas, regístralo como inversión (Resumen → "Cuadre con tu banco").</small>
+          <small class="hint">Tip: para sumar stock comprado usá la sección <b>Compras / Inversión</b> (recalcula el costo automáticamente). Para ajustes puntuales (nombre, cantidad, unidad, etc.) usá "✏️ editar" en la tabla de la derecha.<br>⚠️ El <b>stock inicial NO resta dinero del banco</b>: úsalo solo para material que ya tenías antes. Material <b>NUEVO</b> que compres: crea el producto con stock 0 y regístralo en <b>Compras / Inversión</b> (así resta del banco).</small>
           <div style="margin-top:12px;display:flex;gap:8px">
             <button class="btn" id="pSaveBtn" onclick="saveProducto()">💾 Guardar producto</button>
             <button class="btn sec hidden" id="pCancelBtn" onclick="cancelEditProducto()">Cancelar edición</button>
@@ -904,7 +904,9 @@ function totales(){
   const saldoIniBs=(db.saldoInicialBs!==undefined&&db.saldoInicialBs!==null&&db.saldoInicialBs!=='')?n(db.saldoInicialBs):n(db.saldoInicial)*hoy;
   const saldoBs=saldoIniBs+cobradoBs-egresosBs-inversionBs-totalPagosBs; // ESTE es el que debe coincidir con el banco
   // Material (en inventario + usado en ventas + dañado) que no tiene ninguna compra registrada: dinero que salió del banco sin quedar anotado
-  const materialSinCompraUSD=Math.max(0,stockVal+materialUSD+mermaUSD-inversionUSD);
+  // db.materialSinCompraBase = lo que el usuario marcó como "ya lo tenía antes de empezar a llevar las cuentas": no se vuelve a avisar,
+  // solo se avisa del material NUEVO que aparezca sin compra registrada.
+  const materialSinCompraUSD=Math.max(0,stockVal+materialUSD+mermaUSD-inversionUSD-n(db.materialSinCompraBase));
   return {ventasUSD,cobradoUSD,porCobrarUSD,materialUSD,gananciaUSD,mermaUSD,inversionUSD,egresosUSD,stockVal,netoUSD,saldoUSD,repAcum,pagado,pendiente,totalPagos,entregasPendientes,cobrosPendientes,
     ventasBs,cobradoBs,porCobrarBs,gananciaBs,materialBs,mermaBs,inversionBs,egresosBs,stockValBs,netoBs,repAcumBs,pagadoBs,pendienteBs,tasaPromSocio,totalPagosBs,saldoIniBs,saldoBs,materialSinCompraUSD};
 }
@@ -1069,7 +1071,10 @@ function renderPendientes(t){
 function renderCuadre(t){
   const L=(signo,txt,bs,usd,extra)=>`<div class="line"><span>${signo} ${txt}</span><span><b>${fBs(bs)}</b> <span class="muted" style="font-size:11px">(${fUSD(usd)})</span></span></div>${extra||''}`;
   const hintInv=t.materialSinCompraUSD>0.1
-    ?`<div style="color:var(--yellow);font-size:12px;padding:6px 0 4px">💡 Hay <b>${fUSD(t.materialSinCompraUSD)}</b> (≈ ${fBs(t.materialSinCompraUSD*tasaHoy())}) de material —en inventario, usado en ventas o dañado— que <b>no tiene ninguna compra registrada</b>. Si lo pagaste con el dinero de esta cuenta, ese dinero ya salió del banco pero la app no lo sabe. <button class="btn sec sm" style="margin-top:4px" onclick="registrarInversionInicial()">Registrar como inversión</button></div>`
+    ?`<div style="color:var(--yellow);font-size:12px;padding:6px 0 4px">💡 Hay <b>${fUSD(t.materialSinCompraUSD)}</b> (≈ ${fBs(t.materialSinCompraUSD*tasaHoy())}) de material ${n(db.materialSinCompraBase)>0?'NUEVO ':''}—en inventario, usado en ventas o dañado— <b>sin ninguna compra registrada</b>.
+      <br>• Si ya lo tenías <b>antes de empezar a llevar las cuentas</b>, no pasa nada: toca "Ya lo tenía antes".
+      <br>• Si lo pagaste con dinero de esta cuenta <b>después de empezar</b>, ese dinero ya salió del banco y la app no lo sabe: toca "Registrar como inversión".
+      <br><button class="btn sec sm" style="margin-top:6px" onclick="ignorarMaterialInicial()">Ya lo tenía antes</button> <button class="btn sec sm" style="margin-top:6px" onclick="registrarInversionInicial()">Registrar como inversión</button></div>`
     :'';
   $('cuadreOut').innerHTML=
     L('','Saldo inicial',t.saldoIniBs,n(db.saldoInicial))+
@@ -1094,22 +1099,48 @@ function actualizarConciliacion(t){
   if(real===undefined||real===null||real===''){out.innerHTML='<div class="muted" style="font-size:12px;margin-top:6px">Escribe lo que muestra tu banco y te digo si coincide con la app.</div>';return;}
   const dif=n(real)-t.saldoBs;
   if(Math.abs(dif)<1){out.innerHTML='<div class="line pos" style="margin-top:8px"><b>✅ Coincide con tu banco</b></div>';return;}
-  out.innerHTML=`<div style="margin-top:8px;font-size:13px;color:${dif<0?'var(--red)':'var(--yellow)'}">${dif<0
-    ?`Tu banco tiene <b>${fBs(-dif)} MENOS</b> que la app: salió dinero que no está registrado (compras de material, gastos, retiros…).`
-    :`Tu banco tiene <b>${fBs(dif)} MÁS</b> que la app: entró dinero que no está registrado (ventas, abonos, saldo inicial…).`}</div>
-    <div class="muted" style="font-size:12px;margin-top:6px">Si ya registraste todo y aun así no coincide, tu saldo inicial debería ser ${fBs(t.saldoIniBs+dif)}. <button class="btn sec sm" onclick="ajustarSaldoInicial()">Aplicar</button></div>`;
+  if(dif<0){
+    out.innerHTML=`<div style="margin-top:8px;font-size:13px;color:var(--red)">Tu banco tiene <b>${fBs(-dif)} MENOS</b> que la app.</div>
+      <div class="muted" style="font-size:12px;margin-top:4px">Quiere decir que salió dinero de tu cuenta que todavía no está anotado en la app (gastos, compras, retiros…). Anótalos en la pestaña <b>Egresos</b> y esta diferencia irá bajando hasta cuadrar.</div>
+      <div class="muted" style="font-size:12px;margin-top:8px">¿No recuerdas en qué se fue? Puedes anotar la diferencia de una vez (y después borrarla cuando pongas los gastos reales):<br><button class="btn sec sm" style="margin-top:4px" onclick="registrarGastoSinDetallar()">Anotar ${fBs(-dif)} como "gastos sin detallar"</button></div>`;
+  }else{
+    out.innerHTML=`<div style="margin-top:8px;font-size:13px;color:var(--yellow)">Tu banco tiene <b>${fBs(dif)} MÁS</b> que la app.</div>
+      <div class="muted" style="font-size:12px;margin-top:4px">Quiere decir que entró dinero que no está anotado (una venta o un abono que falta). Anótalo en <b>Ventas</b>.</div>
+      <div class="muted" style="font-size:12px;margin-top:8px">Si es dinero que ya tenías en el banco <b>antes de empezar</b> a llevar las cuentas:<br><button class="btn sec sm" style="margin-top:4px" onclick="sumarDiferenciaASaldoInicial()">Sumarlo al saldo inicial</button></div>`;
+  }
 }
 function onBancoRealInput(){const v=$('bancoReal').value;db.bancoRealBs=v===''?undefined:n(v);actualizarConciliacion();}
 function onBancoRealChange(){save();}
-function ajustarSaldoInicial(){
+// Falta dinero en el banco real: se anota la diferencia como un gasto (sale de la misma cuenta del negocio) para que la app cuadre.
+function registrarGastoSinDetallar(){
   const t=totales(), real=db.bancoRealBs;
   if(real===undefined||real===null||real==='')return toast('Escribe primero cuánto tienes en tu banco',true);
   const dif=n(real)-t.saldoBs;
-  if(Math.abs(dif)<1)return toast('Ya coincide con tu banco');
-  if(!confirm('Esto cambia tu saldo inicial de '+fBs(t.saldoIniBs)+' a '+fBs(t.saldoIniBs+dif)+' para que la app coincida con tu banco.\n\nHazlo solo si ya registraste TODAS las ventas, gastos y compras. ¿Continuar?'))return;
+  if(dif>=-1)return toast('A tu banco no le falta dinero respecto a la app',true);
+  const tasa=tasaHoy();
+  if(tasa<=0)return toast('Falta la tasa del día (Bs/$)',true);
+  const bs=-dif;
+  if(!confirm('Se va a anotar un gasto de '+fBs(bs)+' ('+fUSD(bs/tasa)+' a tasa '+fNum(tasa)+') llamado "Gastos sin detallar" para que la app coincida con tu banco.\n\nOjo: un gasto también baja tu "Ganancia real". Cuando anotes los gastos reales, borra este. ¿Continuar?'))return;
+  db.egresos.push({id:uid(),ts:nowTs(),fecha:today(),concepto:'Gastos sin detallar (para cuadrar con el banco)',cat:'Otro',monto:bs/tasa,tasa,montoBs:bs});
+  save();toast('Anotado · ahora la app coincide con tu banco');render();
+}
+// Al banco real le sobra dinero y era plata que ya estaba antes de empezar: se suma al saldo inicial (en Bs y en su equivalente en dólares).
+function sumarDiferenciaASaldoInicial(){
+  const t=totales(), real=db.bancoRealBs;
+  if(real===undefined||real===null||real==='')return toast('Escribe primero cuánto tienes en tu banco',true);
+  const dif=n(real)-t.saldoBs;
+  if(dif<=1)return toast('A tu banco no le sobra dinero respecto a la app',true);
+  if(!confirm('Tu saldo inicial pasará de '+fBs(t.saldoIniBs)+' a '+fBs(t.saldoIniBs+dif)+' (dinero que ya tenías en el banco antes de empezar a llevar las cuentas).\n\n¿Continuar?'))return;
   db.saldoInicialBs=t.saldoIniBs+dif;
   db.saldoInicial=n(db.saldoInicial)+dif/(tasaHoy()||1);
-  save();toast('Saldo inicial ajustado · ahora coincide con tu banco');render();
+  save();toast('Saldo inicial actualizado · ahora coincide con tu banco');render();
+}
+// "Ya lo tenía antes de empezar": ese material no salió del banco durante estas cuentas, así que deja de avisarse.
+function ignorarMaterialInicial(){
+  const t=totales();
+  if(t.materialSinCompraUSD<=0.1)return;
+  db.materialSinCompraBase=n(db.materialSinCompraBase)+t.materialSinCompraUSD;
+  save();toast('Listo · solo se avisará del material NUEVO sin compra registrada');render();
 }
 // El material cargado como "stock inicial" no salió del banco en la app. Esto lo registra como una compra (solo el gasto, sin tocar el stock).
 function registrarInversionInicial(){
