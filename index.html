@@ -194,6 +194,7 @@
         </div>
         <div class="calcbox" id="calcOut"></div>
       </div>
+      <div class="panel" id="periodoBar" style="padding:12px 16px"></div>
       <div class="cards" id="dashCards"></div>
       <div class="grid2">
         <div class="panel">
@@ -209,6 +210,18 @@
           <div class="sub muted" style="margin-bottom:8px">De dónde sale el número de "Ganancia real del negocio"</div>
           <div class="calcbox" id="gananciaOut" style="margin-top:0"></div>
           <div class="sub muted" style="margin-top:10px;font-size:12px">💡 La ganancia real NO es igual al saldo del banco: el banco es dinero que entró y salió; la ganancia descuenta el costo del material que ya usaste. Se igualan cuando todo el material está pagado desde el banco y ya vendido.</div>
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="panel">
+          <h3>🏢 Fondo de la empresa</h3>
+          <div class="sub muted" style="margin-bottom:8px">Lo que queda en la cuenta después de pagarle a los socios. Se acumula semana tras semana y solo baja con gastos, recompras e inversiones.</div>
+          <div class="calcbox" id="fondoOut" style="margin-top:0"></div>
+        </div>
+        <div class="panel">
+          <h3>🗓️ Semanas cerradas</h3>
+          <div class="sub muted" style="margin-bottom:8px">Cerrar la semana no borra nada: deja el Resumen en cero para la semana nueva y el fondo de la empresa sigue ahí.</div>
+          <div id="cierresOut"></div>
         </div>
       </div>
       <div class="grid2">
@@ -258,6 +271,7 @@
         </div>
         <div class="panel">
           <h3>📜 Historial de ventas</h3>
+          <div class="sub muted per-badge" id="perVentas" style="margin-bottom:6px;font-size:12px"></div>
           <table><thead><tr><th>Fecha</th><th>Detalle</th><th class="r">Venta $</th><th class="r">Material $</th><th class="r">Ganancia $</th><th></th></tr></thead>
           <tbody id="ventasTbl"></tbody></table>
         </div>
@@ -317,6 +331,7 @@
         </div>
         <div class="panel">
           <h3>📜 Historial de mercancía dañada</h3>
+          <div class="sub muted per-badge" id="perMermas" style="margin-bottom:6px;font-size:12px"></div>
           <table><thead><tr><th>Fecha</th><th>Producto</th><th class="r">Cant.</th><th class="r">Valor $</th><th></th></tr></thead>
           <tbody id="mermasTbl"></tbody></table>
         </div>
@@ -342,6 +357,7 @@
         </div>
         <div class="panel">
           <h3>📜 Historial de compras</h3>
+          <div class="sub muted per-badge" id="perCompras" style="margin-bottom:6px;font-size:12px"></div>
           <table><thead><tr><th>Fecha</th><th>Producto</th><th>Tipo</th><th class="r">Cant.</th><th class="r">Total $</th><th></th></tr></thead>
           <tbody id="comprasTbl"></tbody></table>
         </div>
@@ -366,6 +382,7 @@
         </div>
         <div class="panel">
           <h3>📜 Historial de egresos</h3>
+          <div class="sub muted per-badge" id="perEgresos" style="margin-bottom:6px;font-size:12px"></div>
           <table><thead><tr><th>Fecha</th><th>Concepto</th><th>Cat.</th><th class="r">USD</th><th class="r">Bs</th><th></th></tr></thead>
           <tbody id="egresosTbl"></tbody></table>
         </div>
@@ -409,7 +426,8 @@
       </div>
       <div class="panel">
         <h3>⚠️ Zona de peligro</h3>
-        <p class="muted">Borra TODOS los datos de esta PC. No se puede deshacer (hacé respaldo antes).</p>
+        <p class="muted">💡 <b>Para empezar una semana nueva NO hace falta borrar nada:</b> usa <b>🔒 Cerrar semana</b> en el Resumen. Deja todo en cero para la semana nueva, guarda el historial y conserva el fondo de la empresa.</p>
+        <p class="muted">Esto borra TODOS los datos (productos, ventas, historial) para todos los socios. No se puede deshacer (haz respaldo antes). Te preguntará si quieres conservar el fondo de la empresa.</p>
         <button class="btn danger" onclick="wipeAll()">🗑️ Borrar todos los datos</button>
       </div>
     </section>
@@ -429,14 +447,16 @@ const SOCIOS=['danny','greis','gihans','empresa'];
 const SOC_LABEL={danny:'Danny',greis:'Greis',gihans:'Gihans',empresa:'Empresa'};
 const SOC_COLOR={danny:'var(--danny)',greis:'var(--greis)',gihans:'var(--gihans)',empresa:'var(--empresa)'};
 const DEFAULT={
-  productos:[], ventas:[], compras:[], egresos:[], pagos:[], mermas:[],
+  productos:[], ventas:[], compras:[], egresos:[], pagos:[], mermas:[], cierres:[],
   socios:{danny:30,greis:25,gihans:35,empresa:10},
   tasaRef:0, saldoInicial:0, tasaRefAuto:true
 };
 let db=load();
 
+// Copia de DEFAULT con sus propios arrays (con {...DEFAULT} los arrays se compartían entre db y DEFAULT y un push los contaminaba)
+function conDefault(d){return {...structuredClone(DEFAULT),...d};}
 function load(){
-  try{const d=JSON.parse(localStorage.getItem(KEY));return d?{...DEFAULT,...d}:structuredClone(DEFAULT);}
+  try{const d=JSON.parse(localStorage.getItem(KEY));return d?conDefault(d):structuredClone(DEFAULT);}
   catch(e){return structuredClone(DEFAULT);}
 }
 // save() guarda local al instante y empuja a la nube (con pequeño retardo para agrupar cambios)
@@ -494,7 +514,7 @@ async function cloudPull(){
     const {data,error}=await supa.from('config').select('estado').eq('id','main').single();
     if(error)throw error;
     if(dirty)return; // se editó algo justo mientras se leía la nube: no pisar, se reintentará solo
-    if(data&&data.estado){db={...DEFAULT,...data.estado};localStorage.setItem(KEY,JSON.stringify(db));}
+    if(data&&data.estado){db=conDefault(data.estado);localStorage.setItem(KEY,JSON.stringify(db));}
     setSync('ok','Sincronizado');render();
     return true;
   }catch(e){setSync('err','No se pudo leer la nube');console.warn('pull',e);return false;}
@@ -832,14 +852,15 @@ function pagarSocio(s){
   db.pagos.push({id:uid(),ts:nowTs(),fecha:today(),socio:s,monto:pend,montoBs:pendBs});
   save();toast('Pagado a '+SOC_LABEL[s]+' · '+fBs(pendBs));render();
 }
+// Se paga a Danny, Greis y Gihans. La Empresa NO se paga: su % se queda en la cuenta (Fondo de la empresa).
 function pagarTodos(){
   const t=totales();
-  const totalBs=SOCIOS.reduce((a,s)=>a+Math.max(0,t.pendienteBs[s]),0);
-  const total=SOCIOS.reduce((a,s)=>a+Math.max(0,t.pendiente[s]),0);
+  const totalBs=PAGABLES.reduce((a,s)=>a+Math.max(0,t.pendienteBs[s]),0);
+  const total=PAGABLES.reduce((a,s)=>a+Math.max(0,t.pendiente[s]),0);
   if(total<=0.005||totalBs<=0.005)return toast('No hay montos pendientes',true);
-  if(!confirm('¿Registrar el pago de TODO lo pendiente ('+fBs(totalBs)+' · '+fUSD(total)+') a los socios y la empresa?\nTodos quedan en cero y se descuenta del saldo del banco.'))return;
-  SOCIOS.forEach(s=>{const p=t.pendiente[s],pb=t.pendienteBs[s];if(p>0.005&&pb>0.005)db.pagos.push({id:uid(),ts:nowTs(),fecha:today(),socio:s,monto:p,montoBs:pb});});
-  save();toast('Pagos registrados · todos en cero');render();
+  if(!confirm('¿Registrar el pago de TODO lo pendiente ('+fBs(totalBs)+' · '+fUSD(total)+') a Danny, Greis y Gihans?\nSe descuenta del banco.\n\nEl % de la empresa NO se paga: se queda en la cuenta como Fondo de la empresa ('+fBs(t.fondoBs)+', no cambia).'))return;
+  PAGABLES.forEach(s=>{const p=t.pendiente[s],pb=t.pendienteBs[s];if(p>0.005&&pb>0.005)db.pagos.push({id:uid(),ts:nowTs(),fecha:today(),socio:s,monto:p,montoBs:pb});});
+  save();toast('Socios pagados · el fondo de la empresa sigue en '+fBs(t.fondoBs));render();
 }
 function delPago(id){
   if(!confirm('¿Anular este pago? El monto vuelve a quedar pendiente y al saldo.'))return;
@@ -901,16 +922,110 @@ function totales(){
   });
   const totalPagosBs=SOCIOS.reduce((a,s)=>a+pagadoBs[s],0);
   // Saldo inicial en Bs: el que escribió el usuario; si nunca lo escribió, se deriva del saldo inicial en dólares
-  const saldoIniBs=(db.saldoInicialBs!==undefined&&db.saldoInicialBs!==null&&db.saldoInicialBs!=='')?n(db.saldoInicialBs):n(db.saldoInicial)*hoy;
+  const saldoIniBs=saldoIniBsDe();
   const saldoBs=saldoIniBs+cobradoBs-egresosBs-inversionBs-totalPagosBs; // ESTE es el que debe coincidir con el banco
+  // Lo que queda en la cuenta DESPUÉS de pagarle a los socios = fondo de la empresa (el % de la empresa nunca sale de la cuenta)
+  const debeSociosBs=PAGABLES.reduce((a,s)=>a+pendienteBs[s],0), debeSocios=PAGABLES.reduce((a,s)=>a+pendiente[s],0);
+  const fondoBs=saldoBs-debeSociosBs, fondoUSD=saldoUSD-debeSocios;
   // Material (en inventario + usado en ventas + dañado) que no tiene ninguna compra registrada: dinero que salió del banco sin quedar anotado
   // db.materialSinCompraBase = lo que el usuario marcó como "ya lo tenía antes de empezar a llevar las cuentas": no se vuelve a avisar,
   // solo se avisa del material NUEVO que aparezca sin compra registrada.
   const materialSinCompraUSD=Math.max(0,stockVal+materialUSD+mermaUSD-inversionUSD-n(db.materialSinCompraBase));
   return {ventasUSD,cobradoUSD,porCobrarUSD,materialUSD,gananciaUSD,mermaUSD,inversionUSD,egresosUSD,stockVal,netoUSD,saldoUSD,repAcum,pagado,pendiente,totalPagos,entregasPendientes,cobrosPendientes,
-    ventasBs,cobradoBs,porCobrarBs,gananciaBs,materialBs,mermaBs,inversionBs,egresosBs,stockValBs,netoBs,repAcumBs,pagadoBs,pendienteBs,tasaPromSocio,totalPagosBs,saldoIniBs,saldoBs,materialSinCompraUSD};
+    ventasBs,cobradoBs,porCobrarBs,gananciaBs,materialBs,mermaBs,inversionBs,egresosBs,stockValBs,netoBs,repAcumBs,pagadoBs,pendienteBs,tasaPromSocio,totalPagosBs,saldoIniBs,saldoBs,materialSinCompraUSD,
+    debeSociosBs,debeSocios,fondoBs,fondoUSD};
 }
 function bsPago(p,t){return p.montoBs!==undefined?n(p.montoBs):n(p.monto)*(t.tasaPromSocio[p.socio]||tasaHoy());}
+
+/* ================= FONDO DE LA EMPRESA Y SEMANAS ================= */
+// FONDO DE LA EMPRESA = lo que queda en la cuenta después de pagarle a los socios:
+//   saldo inicial + material recuperado (reinversión) + % de la empresa − gastos − compras/recompras/inversiones.
+// El % de la empresa NUNCA sale de la cuenta cuando se les paga a los socios, así que se acumula semana tras semana.
+// "Cerrar semana" NO borra nada: solo marca un corte para que el Resumen muestre la semana nueva desde cero. El saldo del banco,
+// el fondo y lo que se les debe a los socios siempre se calculan con TODO el historial, por eso nunca se pierden.
+const PAGABLES=['danny','greis','gihans'];   // a quienes se les paga; la Empresa se queda en la cuenta
+function vistaPeriodo(){try{return localStorage.getItem('pakipis_vista')||'semana';}catch(e){return 'semana';}}
+function setVistaPeriodo(v){try{localStorage.setItem('pakipis_vista',v);}catch(e){}render();}
+function ultimoCierreTs(){const c=db.cierres||[];return c.length?n(c[c.length-1].ts):0;}
+function desdeActual(){return vistaPeriodo()==='todo'?0:ultimoCierreTs();}   // 0 = todo el historial
+function enVista(ts){return n(ts)>=desdeActual();}
+function saldoIniBsDe(){return (db.saldoInicialBs!==undefined&&db.saldoInicialBs!==null&&db.saldoInicialBs!=='')?n(db.saldoInicialBs):n(db.saldoInicial)*tasaHoy();}
+// Suma de TODO lo ocurrido antes de `lim` (ms). acumulado(Infinity) = todo el historial; acumulado(0) = nada.
+// Los cobros y pagos cuentan en la fecha en que ocurrieron (no en la de la venta).
+function acumulado(lim){
+  const antes=ts=>n(ts)<lim;
+  const A={ventasUSD:0,ventasBs:0,gananciaUSD:0,gananciaBs:0,materialUSD:0,cobradoUSD:0,cobradoBs:0,egresosUSD:0,egresosBs:0,inversionUSD:0,inversionBs:0,mermaUSD:0,mermaBs:0,
+    pagosUSD:0,pagosBs:0,repUSD:{},repBs:{},pagadoUSD:{},pagadoBs:{}};
+  const rU={},rB={};   // reparto de todo el historial: da la tasa promedio de cada socio para pagos viejos que no guardaron sus Bs
+  SOCIOS.forEach(s=>{A.repUSD[s]=0;A.repBs[s]=0;A.pagadoUSD[s]=0;A.pagadoBs[s]=0;rU[s]=0;rB[s]=0;});
+  db.ventas.forEach(v=>{
+    if(antes(v.ts)){A.ventasUSD+=n(v.total);A.ventasBs+=bsVenta(v);A.gananciaUSD+=n(v.ganancia);A.gananciaBs+=bsGananciaVenta(v);A.materialUSD+=n(v.costoMat);}
+    if(n(v.total)>0)cobrosDeVenta(v).forEach(c=>{
+      const m=n(c.monto),tc=tasaCobro(v,c),dentro=antes(c.ts);
+      if(dentro){A.cobradoUSD+=m;A.cobradoBs+=m*tc;}
+      SOCIOS.forEach(s=>{const r=n(v.reparto?.[s])*(m/v.total);rU[s]+=r;rB[s]+=r*tc;if(dentro){A.repUSD[s]+=r;A.repBs[s]+=r*tc;}});
+    });
+  });
+  db.egresos.forEach(e=>{if(antes(e.ts)){A.egresosUSD+=n(e.monto);A.egresosBs+=bsEgreso(e);}});
+  db.compras.forEach(c=>{if(antes(c.ts)){A.inversionUSD+=n(c.total);A.inversionBs+=bsCompra(c);}});
+  db.mermas.forEach(m=>{if(antes(m.ts)){A.mermaUSD+=n(m.valor);A.mermaBs+=bsMerma(m);}});
+  db.pagos.forEach(p=>{
+    if(!antes(p.ts))return;
+    const s=p.socio, bs=p.montoBs!==undefined?n(p.montoBs):n(p.monto)*(rU[s]>0?rB[s]/rU[s]:tasaHoy());
+    A.pagosUSD+=n(p.monto);A.pagosBs+=bs;
+    if(A.pagadoUSD[s]!==undefined){A.pagadoUSD[s]+=n(p.monto);A.pagadoBs[s]+=bs;}
+  });
+  return A;
+}
+// Saldo del banco, fondo de la empresa y lo que se les debe a los socios "a la fecha" de un acumulado
+function balancesDe(A){
+  const saldoBs=saldoIniBsDe()+A.cobradoBs-A.egresosBs-A.inversionBs-A.pagosBs;
+  const saldoUSD=n(db.saldoInicial)+A.cobradoUSD-A.egresosUSD-A.inversionUSD-A.pagosUSD;
+  const debeBs=PAGABLES.reduce((a,s)=>a+A.repBs[s]-A.pagadoBs[s],0), debeUSD=PAGABLES.reduce((a,s)=>a+A.repUSD[s]-A.pagadoUSD[s],0);
+  return {saldoBs,saldoUSD,debeBs,debeUSD,fondoBs:saldoBs-debeBs,fondoUSD:saldoUSD-debeUSD};
+}
+// Lo ocurrido entre dos cortes (A1 − A0)
+function restar(A1,A0){
+  const F={};
+  Object.keys(A1).forEach(k=>{
+    if(typeof A1[k]==='number')F[k]=A1[k]-A0[k];
+    else{F[k]={};SOCIOS.forEach(s=>{F[k][s]=A1[k][s]-A0[k][s];});}
+  });
+  F.materialRecBs=F.cobradoBs-SOCIOS.reduce((a,s)=>a+F.repBs[s],0);     // plata del material vendido que vuelve a la cuenta (reinversión)
+  F.materialRecUSD=F.cobradoUSD-SOCIOS.reduce((a,s)=>a+F.repUSD[s],0);
+  F.netoBs=F.gananciaBs-F.egresosBs-F.mermaBs;                              // ganancia real del periodo
+  F.netoUSD=F.gananciaUSD-F.egresosUSD-F.mermaUSD;
+  return F;
+}
+// Todo lo del periodo que se está mostrando: inicio (S0), fin (S1) y lo ocurrido en medio (F)
+function periodo(){
+  const desde=desdeActual(), A0=acumulado(desde), A1=acumulado(Infinity);
+  return {desde,A0,A1,F:restar(A1,A0),S0:balancesDe(A0),S1:balancesDe(A1)};
+}
+function badgePeriodoHTML(){
+  const d=desdeActual();
+  return d>0?`📅 Solo la semana actual (desde ${fmtFechaHora(d)}) · <a href="#" onclick="setVistaPeriodo('todo');return false" style="color:var(--brand);text-decoration:none">ver todo el historial</a>`:'';
+}
+function cerrarSemana(){
+  const desde=ultimoCierreTs();
+  const A0=acumulado(desde), A1=acumulado(Infinity), F=restar(A1,A0), S1=balancesDe(A1);
+  const movs=[db.ventas,db.egresos,db.compras,db.pagos,db.mermas].reduce((a,arr)=>a+arr.filter(x=>n(x.ts)>=desde).length,0);
+  if(!movs)return toast('No hay movimientos desde el último cierre',true);
+  const msg='¿Cerrar la semana?\n\n• Ventas: '+fBs(F.ventasBs)+'\n• Ganancia real: '+fBs(F.netoBs)+'\n• Pagado a socios: '+fBs(F.pagosBs)+'\n\n'+
+    'Lo que se les debe todavía a los socios: '+fBs(S1.debeBs)+(S1.debeBs>0.5?' (NO se pierde: queda pendiente para la semana nueva)':'')+'\n'+
+    'Fondo de la empresa que pasa a la semana nueva: '+fBs(S1.fondoBs)+'\n\nNo se borra nada: solo el Resumen empieza en cero.';
+  if(!confirm(msg))return;
+  db.cierres.push({id:uid(),ts:Math.max(nowTs(),desde+1),fecha:today(),desde,
+    resumen:{ventasBs:F.ventasBs,ventasUSD:F.ventasUSD,netoBs:F.netoBs,netoUSD:F.netoUSD,egresosBs:F.egresosBs,inversionBs:F.inversionBs,pagosBs:F.pagosBs,pagosUSD:F.pagosUSD},
+    saldoBs:S1.saldoBs,saldoUSD:S1.saldoUSD,fondoBs:S1.fondoBs,fondoUSD:S1.fondoUSD,debeBs:S1.debeBs,debeUSD:S1.debeUSD});
+  try{localStorage.setItem('pakipis_vista','semana');}catch(e){}
+  save();toast('Semana cerrada · el fondo de la empresa sigue en '+fBs(S1.fondoBs));render();
+}
+function deshacerUltimoCierre(){
+  const c=db.cierres||[];if(!c.length)return;
+  if(!confirm('¿Deshacer el último cierre ('+fmtFechaHora(c[c.length-1].ts)+')?\nLos movimientos de esa semana vuelven a verse en la semana actual. No se pierde nada.'))return;
+  db.cierres=c.slice(0,-1);save();render();toast('Cierre deshecho');
+}
 function render(){
   const t=totales();
   // DASHBOARD
@@ -924,25 +1039,36 @@ function render(){
   // La tasa de cada venta/compra/gasto arranca con la tasa del día (se puede cambiar); así ningún registro queda sin tasa.
   ['vTasa','cTasa','eTasa'].forEach(id=>{const el=$(id);if(el&&!el.value&&document.activeElement!==el&&tasaHoy()>0)el.value=tasaHoy().toFixed(2);});
   calcPresupuesto();calcVenta();
+  // P = el periodo que se muestra (la semana actual, o todo el historial). Los SALDOS (banco, fondo, deuda con socios) siempre
+  // cuentan todo el historial; los movimientos (ventas, gastos, etc.) cuentan solo el periodo mostrado.
+  const P=periodo(), F=P.F, S1=P.S1, suf=P.desde>0?' · semana':'';
   const tarjetas=[
-    {c:t.saldoBs>=0?'green':'red',l:'💵 Saldo en banco/caja',v:fBs(t.saldoBs),b:'≈ '+fUSD(t.saldoUSD),key:true,
+    {c:S1.saldoBs>=0?'green':'red',l:'💵 Saldo en banco/caja',v:fBs(S1.saldoBs),b:'≈ '+fUSD(S1.saldoUSD),key:true,
       h:'= saldo inicial + cobrado − egresos − compras − pagos a socios. Cada monto en Bs, a la tasa del día en que se registró.'},
-    {c:'blue',l:'Ventas totales (facturado)',v:fUSD(t.ventasUSD),b:fBs(t.ventasBs)},
-    {c:'green',l:'Cobrado de clientes',v:fUSD(t.cobradoUSD),b:fBs(t.cobradoBs)},
+    {c:S1.fondoBs>=0?'green':'red',l:'🏢 Fondo de la empresa',v:fBs(S1.fondoBs),b:'≈ '+fUSD(S1.fondoUSD),
+      h:'Lo que queda en la cuenta después de pagar a los socios. Se acumula semana tras semana y solo baja con gastos, recompras e inversiones.'},
+    {c:'blue',l:'Ventas totales (facturado)'+suf,v:fUSD(F.ventasUSD),b:fBs(F.ventasBs)},
+    {c:'green',l:'Cobrado de clientes'+suf,v:fUSD(F.cobradoUSD),b:fBs(F.cobradoBs)},
     {c:'yellow',l:'Por cobrar (clientes)',v:fUSD(t.porCobrarUSD),b:'≈ '+fBs(t.porCobrarBs)},
-    {c:'red',l:'Egresos / gastos (salen)',v:fUSD(t.egresosUSD),b:fBs(t.egresosBs)},
-    {c:'red',l:'Compras / inversión (salen)',v:fUSD(t.inversionUSD),b:fBs(t.inversionBs),
+    {c:'red',l:'Egresos / gastos'+suf,v:fUSD(F.egresosUSD),b:fBs(F.egresosBs)},
+    {c:'red',l:'Compras / inversión'+suf,v:fUSD(F.inversionUSD),b:fBs(F.inversionBs),
       h:t.materialSinCompraUSD>0.1?'⚠️ Hay '+fUSD(t.materialSinCompraUSD)+' de material sin compra registrada (ver "Cuadre con tu banco").':''},
-    {c:'red',l:'Pagado a socios (salen)',v:fUSD(t.totalPagos),b:fBs(t.totalPagosBs)},
-    {c:'red',l:'Pérdida por daños',v:fUSD(t.mermaUSD),b:fBs(t.mermaBs)},
-    {c:'green',l:'Ganancia del trabajo (vtas−mat.)',v:fUSD(t.gananciaUSD),b:fBs(t.gananciaBs)},
-    {c:t.netoUSD>=0?'green':'red',l:'Ganancia real del negocio',v:fUSD(t.netoUSD),b:fBs(t.netoBs),
+    {c:'red',l:'Pagado a socios'+suf,v:fUSD(F.pagosUSD),b:fBs(F.pagosBs)},
+    {c:'red',l:'Pérdida por daños'+suf,v:fUSD(F.mermaUSD),b:fBs(F.mermaBs)},
+    {c:'green',l:'Ganancia del trabajo (vtas−mat.)'+suf,v:fUSD(F.gananciaUSD),b:fBs(F.gananciaBs)},
+    {c:F.netoUSD>=0?'green':'red',l:'Ganancia real del negocio'+suf,v:fUSD(F.netoUSD),b:fBs(F.netoBs),
       h:'= ventas − material usado − egresos − daños (desglose abajo)'},
     {c:'blue',l:'Valor de inventario',v:fUSD(t.stockVal),b:'≈ '+fBs(t.stockValBs)+' a la tasa de hoy'},
   ];
   $('dashCards').innerHTML=tarjetas.map(c=>`<div class="card ${c.c}">${c.key?'<div class="lbl" style="color:var(--brand2)">DEBE COINCIDIR CON TU BANCO</div>':''}<div class="lbl">${c.l}</div><div class="val${c.key?'':' sm'}">${c.v}</div><div class="bs">${c.b}</div>${c.h?`<div class="hint2">${c.h}</div>`:''}</div>`).join('');
-  renderCuadre(t);
-  $('dashSocios').innerHTML='<div class="sub muted" style="margin-bottom:6px">Pendiente por pagar en bolívares (cada venta a la tasa de su día) · se reinicia al pagar</div>'+SOCIOS.map(s=>`<div class="socio"><span class="swatch" style="background:${SOC_COLOR[s]}"></span><span class="nm">${SOC_LABEL[s]}</span><span class="pc">${db.socios[s]}%</span><span class="am ${t.pendienteBs[s]>0.005?'pos':'muted'}">${fBs(t.pendienteBs[s])}<small>≈ ${fUSD(t.pendiente[s])}</small></span></div>`).join('');
+  renderPeriodo();
+  renderCuadre(t,P);
+  renderCierres();
+  document.querySelectorAll('.per-badge').forEach(el=>{el.innerHTML=badgePeriodoHTML();});
+  // Los 3 socios: lo que se les debe. La Empresa NO se paga: su % se queda en la cuenta y va al Fondo de la empresa.
+  $('dashSocios').innerHTML='<div class="sub muted" style="margin-bottom:6px">Pendiente por pagar en bolívares (cada venta a la tasa de su día) · se reinicia al pagar. El % de la empresa NO se paga: se queda en la cuenta.</div>'+SOCIOS.map(s=>s==='empresa'
+    ?`<div class="socio"><span class="swatch" style="background:${SOC_COLOR[s]}"></span><span class="nm">${SOC_LABEL[s]}</span><span class="pc">${db.socios[s]}%</span><span class="am muted" style="font-size:12px;font-weight:600">se queda en la cuenta<small>suma al Fondo de la empresa</small></span></div>`
+    :`<div class="socio"><span class="swatch" style="background:${SOC_COLOR[s]}"></span><span class="nm">${SOC_LABEL[s]}</span><span class="pc">${db.socios[s]}%</span><span class="am ${t.pendienteBs[s]>0.005?'pos':'muted'}">${fBs(t.pendienteBs[s])}<small>≈ ${fUSD(t.pendiente[s])}</small></span></div>`).join('');
   // dash inventario
   if(!db.productos.length){$('dashInv').innerHTML='<div class="empty">Sin productos cargados</div>';}
   else{
@@ -951,15 +1077,17 @@ function render(){
       return `<div class="socio"><span class="nm">${p.nombre} <span class="muted">· ${p.cat}</span></span><span class="am ${low?'low':''}">${fNum(p.stock)} ${p.unidad}${low?' ⚠️':''}</span></div>`;
     }).join('');
   }
+  // Listas: solo el periodo que se muestra (la semana actual, o todo el historial)
+  const vis=arr=>arr.filter(x=>enVista(x.ts));
   // dash movimientos (cada cobro real, no el total facturado por adelantado)
   const movs=[
     ...db.ventas.flatMap(v=>{
       const cobros=(v.cobros&&v.cobros.length)?v.cobros:(v.cobros?[]:cobrosDeVenta(v)); // ventas viejas sin cobros = un solo evento por el total
-      return cobros.map(c=>({ts:c.ts,fecha:v.fecha,tipo:'in',det:v.desc+(cobros.length>1?' (abono)':''),usd:c.monto,bs:n(c.monto)*tasaCobro(v,c)}));
+      return cobros.filter(c=>enVista(c.ts)).map(c=>({ts:c.ts,fecha:v.fecha,tipo:'in',det:v.desc+(cobros.length>1?' (abono)':''),usd:c.monto,bs:n(c.monto)*tasaCobro(v,c)}));
     }),
-    ...db.egresos.map(e=>({ts:e.ts,fecha:e.fecha,tipo:'out',det:e.concepto,usd:-e.monto,bs:-bsEgreso(e)})),
-    ...db.compras.map(c=>({ts:c.ts,fecha:c.fecha,tipo:'inv',det:'Compra '+c.prodNombre,usd:-c.total,bs:-bsCompra(c)})),
-    ...db.pagos.map(p=>({ts:p.ts,fecha:p.fecha,tipo:'pay',det:'Pago a '+SOC_LABEL[p.socio],usd:-p.monto,bs:-bsPago(p,t)})),
+    ...vis(db.egresos).map(e=>({ts:e.ts,fecha:e.fecha,tipo:'out',det:e.concepto,usd:-e.monto,bs:-bsEgreso(e)})),
+    ...vis(db.compras).map(c=>({ts:c.ts,fecha:c.fecha,tipo:'inv',det:'Compra '+c.prodNombre,usd:-c.total,bs:-bsCompra(c)})),
+    ...vis(db.pagos).map(p=>({ts:p.ts,fecha:p.fecha,tipo:'pay',det:'Pago a '+SOC_LABEL[p.socio],usd:-p.monto,bs:-bsPago(p,t)})),
   ].sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,12);
   $('dashMov').innerHTML=movs.length?movs.map(m=>{
     const tg=m.tipo==='in'?'<span class="tag in">Venta</span>':m.tipo==='out'?'<span class="tag out">Egreso</span>':m.tipo==='pay'?'<span class="tag out">Pago socio</span>':'<span class="tag inv">Compra</span>';
@@ -978,12 +1106,12 @@ function render(){
   // COMPRAS dropdown + calc
   $('cProd').innerHTML=db.productos.map(p=>`<option value="${p.id}">${p.nombre}</option>`).join('')||'<option value="">— creá un producto —</option>';
   updateCompraCalc();
-  $('comprasTbl').innerHTML=db.compras.length?[...db.compras].reverse().map(c=>
+  $('comprasTbl').innerHTML=vis(db.compras).length?[...vis(db.compras)].reverse().map(c=>
     `<tr><td>${fmtFechaHora(c.ts,c.fecha)}</td><td>${c.prodNombre}${c.soloGasto?'<div class="muted" style="font-size:11px">solo gasto · el stock ya estaba cargado</div>':''}</td><td><span class="tag ${c.tipo==='inversion'?'inv':'out'}">${c.tipo}</span></td><td class="r">${fNum(c.cant)}</td><td class="r">${fUSD(c.total)}<div class="muted" style="font-size:11px">${fBs(bsCompra(c))} · tasa ${fNum(tasaOHoy(c.tasa))}</div></td><td class="r"><button class="btn sec sm" onclick="delCompra('${c.id}')">✕</button></td></tr>`
-  ).join(''):'<tr><td colspan="6" class="empty">Sin compras registradas</td></tr>';
+  ).join(''):'<tr><td colspan="6" class="empty">Sin compras registradas'+(P.desde>0?' esta semana':'')+'</td></tr>';
 
   // VENTAS
-  $('ventasTbl').innerHTML=db.ventas.length?[...db.ventas].reverse().map(v=>{
+  $('ventasTbl').innerHTML=vis(db.ventas).length?[...vis(db.ventas)].reverse().map(v=>{
     const pc=pendienteCobroDeVenta(v), ent=entregadoDeVenta(v);
     const estado=(!ent||pc>0.005)?`<div style="margin-top:3px">${!ent?'<span class="tag out" style="margin-right:4px">Por entregar</span>':''}${pc>0.005?`<span class="tag out">Debe ${fUSD(pc)}</span>`:''}</div>`:'';
     const expandido=ventasExpandidas.has(v.id);
@@ -993,19 +1121,19 @@ function render(){
       <td class="r">${fUSD(v.total)}<div class="muted" style="font-size:11px">${fBs(bsVenta(v))}</div></td><td class="r neg">${fUSD(v.costoMat)}</td>
       <td class="r ${v.ganancia>=0?'pos':'neg'}"><b>${fUSD(v.ganancia)}</b><div class="muted" style="font-size:11px">${fBs(bsGananciaVenta(v))}</div></td>
       <td class="r"><button class="btn sec sm" onclick="delVenta('${v.id}')">✕</button></td></tr>`;
-  }).join(''):'<tr><td colspan="6" class="empty">Sin ventas registradas</td></tr>';
+  }).join(''):'<tr><td colspan="6" class="empty">Sin ventas registradas'+(P.desde>0?' esta semana':'')+'</td></tr>';
 
   // EGRESOS
   updateEgresoCalc();
-  $('egresosTbl').innerHTML=db.egresos.length?[...db.egresos].reverse().map(e=>
+  $('egresosTbl').innerHTML=vis(db.egresos).length?[...vis(db.egresos)].reverse().map(e=>
     `<tr><td>${fmtFechaHora(e.ts,e.fecha)}</td><td>${e.concepto}</td><td><span class="muted">${e.cat}</span></td><td class="r neg">${fUSD(e.monto)}</td><td class="r muted">${fBs(bsEgreso(e))}<div style="font-size:11px">tasa ${fNum(tasaOHoy(e.tasa))}</div></td><td class="r"><button class="btn sec sm" onclick="delEgreso('${e.id}')">✕</button></td></tr>`
-  ).join(''):'<tr><td colspan="6" class="empty">Sin egresos registrados</td></tr>';
+  ).join(''):'<tr><td colspan="6" class="empty">Sin egresos registrados'+(P.desde>0?' esta semana':'')+'</td></tr>';
 
   // MERMAS
   $('mProd').innerHTML=db.productos.map(p=>`<option value="${p.id}">${p.nombre} (stock ${fNum(p.stock)})</option>`).join('')||'<option value="">— creá un producto —</option>';
-  $('mermasTbl').innerHTML=db.mermas.length?[...db.mermas].reverse().map(m=>
+  $('mermasTbl').innerHTML=vis(db.mermas).length?[...vis(db.mermas)].reverse().map(m=>
     `<tr><td>${fmtFechaHora(m.ts,m.fecha)}</td><td>${m.prodNombre}${m.nota?`<div class="muted" style="font-size:11px">${m.nota}</div>`:''}</td><td class="r">${fNum(m.cant)}</td><td class="r neg">${fUSD(m.valor)}<div class="muted" style="font-size:11px">${fBs(bsMerma(m))}</div></td><td class="r"><button class="btn sec sm" onclick="delMerma('${m.id}')">✕</button></td></tr>`
-  ).join(''):'<tr><td colspan="5" class="empty">Sin daños registrados</td></tr>';
+  ).join(''):'<tr><td colspan="5" class="empty">Sin daños registrados'+(P.desde>0?' esta semana':'')+'</td></tr>';
 
   // PENDIENTES
   renderPendientes(t);
@@ -1014,15 +1142,24 @@ function render(){
   $('sDanny').value=db.socios.danny;$('sGreis').value=db.socios.greis;$('sGihans').value=db.socios.gihans;$('sEmpresa').value=db.socios.empresa;
   const sum=SOCIOS.reduce((s,k)=>s+n(db.socios[k]),0);
   $('sumPct').innerHTML=`Suma actual: <b class="${Math.abs(sum-100)<.01?'pos':'neg'}">${sum}%</b>`;
-  const pendTotal=SOCIOS.reduce((a,s)=>a+Math.max(0,t.pendiente[s]),0);
-  const pendTotalBs=SOCIOS.reduce((a,s)=>a+Math.max(0,t.pendienteBs[s]),0);
+  const pendTotal=PAGABLES.reduce((a,s)=>a+Math.max(0,t.pendiente[s]),0);
+  const pendTotalBs=PAGABLES.reduce((a,s)=>a+Math.max(0,t.pendienteBs[s]),0);
   $('sociosFull').innerHTML=
     `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px;flex-wrap:wrap">
-       <div class="muted">Total pendiente por pagar: <b class="${pendTotalBs>0.005?'pos':''}">${fBs(pendTotalBs)}</b> <span class="muted">(≈ ${fUSD(pendTotal)})</span></div>
-       <button class="btn sm" onclick="pagarTodos()">✅ Pagar a todos</button>
-     </div>`+
+       <div class="muted">Total pendiente por pagar a los socios: <b class="${pendTotalBs>0.005?'pos':''}">${fBs(pendTotalBs)}</b> <span class="muted">(≈ ${fUSD(pendTotal)})</span></div>
+       <button class="btn sm" onclick="pagarTodos()">✅ Pagar a los 3 socios</button>
+     </div>
+     <div class="muted" style="font-size:12px;margin-bottom:12px">🏢 El % de la empresa <b>no se paga</b>: se queda en la cuenta y forma el <b>Fondo de la empresa</b> (hoy: <b>${fBs(t.fondoBs)}</b>). Solo baja con gastos, recompras e inversiones.</div>`+
     SOCIOS.map(s=>{
       const pend=t.pendiente[s], pendBs=t.pendienteBs[s];
+      if(s==='empresa')return `<div style="margin-bottom:14px">
+        <div class="socio" style="border:0;padding:4px 0">
+          <span class="swatch" style="background:${SOC_COLOR[s]}"></span>
+          <span class="nm"><b>${SOC_LABEL[s]}</b> <span class="muted">${db.socios[s]}%</span></span>
+          <span class="am muted" style="font-size:12px;font-weight:600">se queda en la cuenta</span>
+        </div>
+        <div class="muted" style="font-size:11px;padding-left:22px">Acumulado histórico ${fBs(t.repAcumBs[s])} (${fUSD(t.repAcum[s])}) · ya forma parte del Fondo de la empresa</div>
+      </div>`;
       return `<div style="margin-bottom:14px">
         <div class="socio" style="border:0;padding:4px 0">
           <span class="swatch" style="background:${SOC_COLOR[s]}"></span>
@@ -1033,9 +1170,9 @@ function render(){
         <div class="muted" style="font-size:11px;padding-left:22px">Histórico ${fBs(t.repAcumBs[s])} (${fUSD(t.repAcum[s])}) · Pagado ${fBs(t.pagadoBs[s])} (${fUSD(t.pagado[s])})</div>
       </div>`;
     }).join('')+
-    (db.pagos.length?`<h3 style="margin-top:18px">🧾 Historial de pagos</h3>
+    (vis(db.pagos).length?`<h3 style="margin-top:18px">🧾 Historial de pagos</h3>${badgePeriodoHTML()?`<div class="sub muted" style="font-size:12px;margin-bottom:6px">${badgePeriodoHTML()}</div>`:''}
       <table><thead><tr><th>Fecha</th><th>Socio</th><th class="r">Monto Bs</th><th class="r">Monto $</th><th></th></tr></thead><tbody>`+
-      [...db.pagos].reverse().map(p=>`<tr><td>${fmtFechaHora(p.ts,p.fecha)}</td><td>${SOC_LABEL[p.socio]}</td><td class="r neg">${fBs(bsPago(p,t))}</td><td class="r muted">${fUSD(p.monto)}</td><td class="r"><button class="btn sec sm" onclick="delPago('${p.id}')">✕</button></td></tr>`).join('')+
+      [...vis(db.pagos)].reverse().map(p=>`<tr><td>${fmtFechaHora(p.ts,p.fecha)}</td><td>${SOC_LABEL[p.socio]}</td><td class="r neg">${fBs(bsPago(p,t))}</td><td class="r muted">${fUSD(p.monto)}</td><td class="r"><button class="btn sec sm" onclick="delPago('${p.id}')">✕</button></td></tr>`).join('')+
       `</tbody></table>`:'');
 }
 function renderPendientes(t){
@@ -1068,7 +1205,9 @@ function renderPendientes(t){
 }
 /* ================= CUADRE CON EL BANCO ================= */
 // Explica el saldo del banco y la ganancia real línea por línea (en bolívares reales y su equivalente en dólares)
-function renderCuadre(t){
+function renderCuadre(t,P){
+  P=P||periodo();
+  const F=P.F, S0=P.S0, S1=P.S1, sem=P.desde>0;
   const L=(signo,txt,bs,usd,extra)=>`<div class="line"><span>${signo} ${txt}</span><span><b>${fBs(bs)}</b> <span class="muted" style="font-size:11px">(${fUSD(usd)})</span></span></div>${extra||''}`;
   const hintInv=t.materialSinCompraUSD>0.1
     ?`<div style="color:var(--yellow);font-size:12px;padding:6px 0 4px">💡 Hay <b>${fUSD(t.materialSinCompraUSD)}</b> (≈ ${fBs(t.materialSinCompraUSD*tasaHoy())}) de material ${n(db.materialSinCompraBase)>0?'NUEVO ':''}—en inventario, usado en ventas o dañado— <b>sin ninguna compra registrada</b>.
@@ -1076,21 +1215,51 @@ function renderCuadre(t){
       <br>• Si lo pagaste con dinero de esta cuenta <b>después de empezar</b>, ese dinero ya salió del banco y la app no lo sabe: toca "Registrar como inversión".
       <br><button class="btn sec sm" style="margin-top:6px" onclick="ignorarMaterialInicial()">Ya lo tenía antes</button> <button class="btn sec sm" style="margin-top:6px" onclick="registrarInversionInicial()">Registrar como inversión</button></div>`
     :'';
+  // Banco: saldo al empezar el periodo + lo que pasó en el periodo = saldo ahora (siempre cuadra con el de todo el historial)
   $('cuadreOut').innerHTML=
-    L('','Saldo inicial',t.saldoIniBs,n(db.saldoInicial))+
-    L('+','Cobrado de clientes',t.cobradoBs,t.cobradoUSD)+
-    L('−','Egresos / gastos',t.egresosBs,t.egresosUSD)+
-    L('−','Compras / inversión',t.inversionBs,t.inversionUSD,hintInv)+
-    L('−','Pagado a socios',t.totalPagosBs,t.totalPagos)+
-    `<div class="line tot"><span>= Debería haber en tu banco</span><span class="${t.saldoBs>=0?'pos':'neg'}"><b>${fBs(t.saldoBs)}</b> <span class="muted" style="font-size:11px">(${fUSD(t.saldoUSD)})</span></span></div>`;
+    L('',sem?'Saldo al empezar la semana':'Saldo inicial',S0.saldoBs,S0.saldoUSD)+
+    L('+','Cobrado de clientes',F.cobradoBs,F.cobradoUSD)+
+    L('−','Egresos / gastos',F.egresosBs,F.egresosUSD)+
+    L('−','Compras / inversión',F.inversionBs,F.inversionUSD,hintInv)+
+    L('−','Pagado a socios',F.pagosBs,F.pagosUSD)+
+    `<div class="line tot"><span>= Debería haber en tu banco</span><span class="${S1.saldoBs>=0?'pos':'neg'}"><b>${fBs(S1.saldoBs)}</b> <span class="muted" style="font-size:11px">(${fUSD(S1.saldoUSD)})</span></span></div>`;
   $('gananciaOut').innerHTML=
-    L('','Ventas (facturado)',t.ventasBs,t.ventasUSD)+
-    L('−','Material usado en esas ventas',t.materialBs,t.materialUSD)+
-    `<div class="line"><span>= Ganancia del trabajo</span><span class="pos"><b>${fBs(t.gananciaBs)}</b> <span class="muted" style="font-size:11px">(${fUSD(t.gananciaUSD)})</span></span></div>`+
-    L('−','Egresos / gastos',t.egresosBs,t.egresosUSD)+
-    L('−','Pérdida por daños',t.mermaBs,t.mermaUSD)+
-    `<div class="line tot"><span>= Ganancia real del negocio</span><span class="${t.netoBs>=0?'pos':'neg'}"><b>${fBs(t.netoBs)}</b> <span class="muted" style="font-size:11px">(${fUSD(t.netoUSD)})</span></span></div>`;
+    L('','Ventas (facturado)',F.ventasBs,F.ventasUSD)+
+    L('−','Material usado en esas ventas',F.ventasBs-F.gananciaBs,F.materialUSD)+
+    `<div class="line"><span>= Ganancia del trabajo</span><span class="pos"><b>${fBs(F.gananciaBs)}</b> <span class="muted" style="font-size:11px">(${fUSD(F.gananciaUSD)})</span></span></div>`+
+    L('−','Egresos / gastos',F.egresosBs,F.egresosUSD)+
+    L('−','Pérdida por daños',F.mermaBs,F.mermaUSD)+
+    `<div class="line tot"><span>= Ganancia real del negocio</span><span class="${F.netoBs>=0?'pos':'neg'}"><b>${fBs(F.netoBs)}</b> <span class="muted" style="font-size:11px">(${fUSD(F.netoUSD)})</span></span></div>`;
+  // Fondo de la empresa: lo que queda en la cuenta después de pagarle a los socios. Se arrastra semana tras semana.
+  const pctEmp=fNum(db.socios.empresa);
+  $('fondoOut').innerHTML=
+    L('',sem?'Fondo al empezar la semana':'Saldo inicial',S0.fondoBs,S0.fondoUSD)+
+    L('+','Material recuperado de lo vendido (reinversión)',F.materialRecBs,F.materialRecUSD)+
+    L('+',pctEmp+'% de la empresa',F.repBs.empresa,F.repUSD.empresa)+
+    L('−','Gastos / egresos',F.egresosBs,F.egresosUSD)+
+    L('−','Compras, recompras e inversiones',F.inversionBs,F.inversionUSD)+
+    (Math.abs(F.pagadoBs.empresa)>0.005?L('−','Retirado por la empresa',F.pagadoBs.empresa,F.pagadoUSD.empresa):'')+
+    `<div class="line tot"><span>= Fondo de la empresa ahora</span><span class="${S1.fondoBs>=0?'pos':'neg'}"><b>${fBs(S1.fondoBs)}</b> <span class="muted" style="font-size:11px">(${fUSD(S1.fondoUSD)})</span></span></div>`+
+    `<div class="muted" style="font-size:12px;margin-top:8px;border-top:1px dashed var(--line);padding-top:8px">Saldo del banco ${fBs(S1.saldoBs)} = Fondo de la empresa ${fBs(S1.fondoBs)} + lo que todavía se les debe a los socios ${fBs(S1.debeBs)}.<br>Pagarles a los socios baja el banco pero <b>no toca el fondo</b>.</div>`;
   actualizarConciliacion(t);
+}
+function renderPeriodo(){
+  const c=db.cierres||[], hay=c.length>0, todo=vistaPeriodo()==='todo';
+  const txt=!hay?'📅 Mostrando <b>todo el historial</b> · cuando cierres la semana, aquí verás solo la semana nueva.'
+    :todo?'📅 Mostrando <b>todo el historial</b>'
+    :'📅 Semana actual · desde <b>'+fmtFechaHora(ultimoCierreTs())+'</b>';
+  $('periodoBar').innerHTML=`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><div style="flex:1;min-width:220px">${txt}<div class="muted" style="font-size:11px">El saldo del banco, el fondo de la empresa y lo que se les debe a los socios siempre cuentan TODO el historial; lo demás cuenta solo el periodo mostrado.</div></div>
+    ${hay?`<button class="btn sec sm" onclick="setVistaPeriodo('${todo?'semana':'todo'}')">${todo?'Ver semana actual':'Ver todo el historial'}</button>`:''}
+    <button class="btn sm" onclick="cerrarSemana()">🔒 Cerrar semana</button></div>`;
+}
+function renderCierres(){
+  const c=[...(db.cierres||[])].reverse();
+  $('cierresOut').innerHTML=c.length
+    ?`<table><thead><tr><th>Cierre</th><th class="r">Ventas</th><th class="r">Ganancia real</th><th class="r">Pagado socios</th><th class="r">Fondo empresa</th></tr></thead><tbody>`+
+      c.map((x,i)=>`<tr><td>${fmtFechaHora(x.ts,x.fecha)}${i===0?`<div><a href="#" onclick="deshacerUltimoCierre();return false" style="font-size:11px;color:var(--red);text-decoration:none">deshacer</a></div>`:''}</td>
+        <td class="r">${fBs(x.resumen.ventasBs)}</td><td class="r ${x.resumen.netoBs>=0?'pos':'neg'}">${fBs(x.resumen.netoBs)}</td><td class="r">${fBs(x.resumen.pagosBs)}</td>
+        <td class="r"><b>${fBs(x.fondoBs)}</b><div class="muted" style="font-size:11px">≈ ${fUSD(x.fondoUSD)}</div></td></tr>`).join('')+`</tbody></table>`
+    :'<div class="empty">Todavía no has cerrado ninguna semana</div>';
 }
 function actualizarConciliacion(t){
   t=t||totales();
@@ -1173,7 +1342,7 @@ function exportJSON(){
 function importJSON(ev){
   const f=ev.target.files[0];if(!f)return;
   const r=new FileReader();
-  r.onload=()=>{try{const d=JSON.parse(r.result);if(!d.productos&&!d.ventas)throw 0;db={...DEFAULT,...d};save();render();toast('Respaldo importado');}catch(e){toast('Archivo inválido',true);}};
+  r.onload=()=>{try{const d=JSON.parse(r.result);if(!d.productos&&!d.ventas)throw 0;db=conDefault(d);save();render();toast('Respaldo importado');}catch(e){toast('Archivo inválido',true);}};
   r.readAsText(f);ev.target.value='';
 }
 function exportCSV(){
@@ -1184,10 +1353,18 @@ function exportCSV(){
   const blob=new Blob(['﻿'+csv],{type:'text/csv'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='Pakipis_ventas_'+today()+'.csv';a.click();toast('CSV exportado');
 }
+// Borrar todo es el "reset" que hacía perder el dinero de la empresa. Ahora avisa de lo que se perdería y ofrece conservar el
+// Fondo de la empresa (lo que queda en la cuenta después de pagar a los socios) como saldo inicial.
 function wipeAll(){
-  if(!confirm('¿Seguro? Esto borra TODO. ¿Hiciste respaldo?'))return;
+  const t=totales(), fondoBs=t.fondoBs, fondoUSD=t.fondoUSD, deuda=t.debeSociosBs;
+  if(!confirm('¿Seguro? Esto borra TODO (productos, ventas, historial) para todos los socios.\n\n💡 Para empezar una semana nueva NO hace falta borrar: usa "🔒 Cerrar semana" en el Resumen. Deja todo en cero, guarda el historial y conserva el fondo de la empresa.'+(deuda>0.5?'\n\n⚠️ Además se perdería lo que todavía se les debe a los socios ('+fBs(deuda)+').':'')+'\n\n¿Hiciste respaldo?'))return;
   if(!confirm('Última confirmación: se borra todo definitivamente.'))return;
-  db=structuredClone(DEFAULT);save();render();toast('Datos borrados');
+  const conservar=fondoBs>0.5&&confirm('¿Conservar el fondo de la empresa ('+fBs(fondoBs)+') como saldo inicial?\n\nAceptar = el fondo se queda (recomendado).\nCancelar = también se borra.');
+  const {socios,tasaRef,tasaRefAuto}=db;
+  db=structuredClone(DEFAULT);
+  db.tasaRef=tasaRef;db.tasaRefAuto=tasaRefAuto;          // la tasa del día no es un dato del negocio: se queda
+  if(conservar){db.saldoInicialBs=fondoBs;db.saldoInicial=fondoUSD;db.socios=socios;}
+  save();render();toast(conservar?'Datos borrados · el fondo de la empresa se conservó como saldo inicial ('+fBs(fondoBs)+')':'Datos borrados');
 }
 
 /* ================= TASA BCV (internet) ================= */
